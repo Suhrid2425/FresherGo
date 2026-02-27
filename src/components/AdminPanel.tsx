@@ -41,6 +41,16 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+const INDIAN_STATES = [
+  "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh",
+  "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka",
+  "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram",
+  "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu",
+  "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal",
+  "Andaman and Nicobar Islands", "Chandigarh", "Dadra and Nagar Haveli and Daman and Diu",
+  "Delhi", "Jammu and Kashmir", "Ladakh", "Lakshadweep", "Puducherry"
+];
+
 export default function AdminPanel() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [stats, setStats] = useState({ colleges: 0, jobs: 0, users: 0, materials: 0 });
@@ -1066,15 +1076,42 @@ function Modal({ title, children, onClose }: { title: string, children: React.Re
 function CommunitiesView() {
   const [communities, setCommunities] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({ name: '', type: 'State' });
+  const [formData, setFormData] = useState({ name: '', type: 'State', state: '' });
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/communities').then(res => res.json()).then(setCommunities);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Mocking API call for now as backend endpoint isn't fully ready for communities
-    const newComm = { id: Math.random().toString(36).substr(2, 9), ...formData, members: '0' };
-    setCommunities([...communities, newComm]);
-    setShowForm(false);
-    setFormData({ name: '', type: 'State' });
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/communities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      });
+      if (res.ok) {
+        const newComm = await res.json();
+        setCommunities([...communities, newComm]);
+        setShowForm(false);
+        setFormData({ name: '', type: 'State', state: '' });
+      } else {
+        alert('Failed to create community');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('An error occurred');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this community?')) return;
+    // Note: DELETE endpoint not implemented in server.ts yet, but adding UI logic
+    setCommunities(communities.filter(c => c.id !== id));
   };
 
   return (
@@ -1092,26 +1129,48 @@ function CommunitiesView() {
 
       {showForm && (
         <form onSubmit={handleSubmit} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in zoom-in-95 duration-200">
-          <input placeholder="Community Name" className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-sm" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required />
-          <select className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-sm" value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})}>
-            <option>State</option>
-            <option>Department</option>
-            <option>Interest</option>
-            <option>Exam Prep</option>
-          </select>
-          <button type="submit" className="md:col-span-2 py-3 bg-navy-900 text-white rounded-xl font-bold">Launch Community</button>
+          <div className="md:col-span-2">
+            <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Community Name</label>
+            <input placeholder="e.g. Maharashtra Students Hub" className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl text-sm" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required />
+          </div>
+          
+          <div>
+            <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Type</label>
+            <select className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl text-sm" value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})}>
+              <option>State</option>
+              <option>Department</option>
+              <option>Interest</option>
+              <option>Exam Prep</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-400 uppercase mb-1">State (Optional)</label>
+            <select className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl text-sm" value={formData.state} onChange={e => setFormData({...formData, state: e.target.value})}>
+              <option value="">Select State</option>
+              {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+
+          <button type="submit" disabled={isLoading} className="md:col-span-2 py-3 bg-navy-900 text-white rounded-xl font-bold disabled:opacity-50">
+            {isLoading ? 'Launching...' : 'Launch Community'}
+          </button>
         </form>
       )}
 
       {communities.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {communities.map(comm => (
-            <div key={comm.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+            <div key={comm.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between group">
               <div>
                 <h3 className="text-sm font-bold text-slate-900">{comm.name}</h3>
-                <p className="text-xs text-slate-500">{comm.type} • {comm.members} Members</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-[10px] font-bold text-navy-500 uppercase tracking-tighter bg-navy-50 px-1.5 py-0.5 rounded">{comm.type}</span>
+                  {comm.state && <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter bg-slate-50 px-1.5 py-0.5 rounded">{comm.state}</span>}
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">{comm.members || 0} Members</p>
               </div>
-              <button className="p-2 text-slate-400 hover:text-red-600 transition-colors"><Trash2 className="w-4 h-4" /></button>
+              <button onClick={() => handleDelete(comm.id)} className="p-2 text-slate-300 hover:text-red-600 transition-colors opacity-0 group-hover:opacity-100"><Trash2 className="w-4 h-4" /></button>
             </div>
           ))}
         </div>

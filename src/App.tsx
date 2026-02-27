@@ -1222,6 +1222,26 @@ function CategoryBtn({ label, active = false, onClick }: { label: string, active
 }
 
 function CommunityPage() {
+  const [communities, setCommunities] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/communities')
+      .then(res => res.json())
+      .then(data => {
+        setCommunities(data);
+        setIsLoading(false);
+      })
+      .catch(err => {
+        console.error(err);
+        setIsLoading(false);
+      });
+  }, []);
+
+  const stateGroups = communities.filter(c => c.type === 'State');
+  const departmentGroups = communities.filter(c => c.type === 'Department');
+  const interestGroups = communities.filter(c => c.type === 'Interest' || c.type === 'Exam Prep');
+
   return (
     <div className="p-6 max-w-5xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
@@ -1238,21 +1258,21 @@ function CommunityPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
         <CommunityCategoryCard 
           title="State Groups" 
-          count="28 Groups" 
+          count={`${stateGroups.length} Groups`} 
           icon={<MapPin className="w-6 h-6" />} 
           color="bg-blue-500"
           desc="Connect with students from your home state."
         />
         <CommunityCategoryCard 
           title="Departments" 
-          count="15 Groups" 
+          count={`${departmentGroups.length} Groups`} 
           icon={<Building2 className="w-6 h-6" />} 
           color="bg-emerald-500"
           desc="Discuss subjects with peers in your field."
         />
         <CommunityCategoryCard 
           title="Interests" 
-          count="42 Groups" 
+          count={`${interestGroups.length} Groups`} 
           icon={<Zap className="w-6 h-6" />} 
           color="bg-amber-500"
           desc="Find people who share your passions."
@@ -1283,12 +1303,27 @@ function CommunityPage() {
 
       <div className="space-y-6">
         <h3 className="text-xl font-bold text-navy-900">Trending Communities</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <FeaturedCommunityCard name="WB Engineers" members="12.4k" category="State" />
-          <FeaturedCommunityCard name="UI/UX Designers" members="8.2k" category="Interest" />
-          <FeaturedCommunityCard name="CSE 2026 Batch" members="5.1k" category="Department" />
-          <FeaturedCommunityCard name="Competitive Coding" members="15.7k" category="Interest" />
-        </div>
+        {isLoading ? (
+          <div className="flex justify-center py-12">
+            <div className="w-8 h-8 border-4 border-navy-100 border-t-navy-900 rounded-full animate-spin" />
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {communities.length > 0 ? communities.map(comm => (
+              <FeaturedCommunityCard 
+                key={comm.id}
+                name={comm.name} 
+                members={comm.members || '0'} 
+                category={comm.type} 
+                state={comm.state}
+              />
+            )) : (
+              <div className="col-span-full py-12 text-center text-slate-400 font-medium">
+                No communities found.
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1309,7 +1344,7 @@ function CommunityCategoryCard({ title, count, icon, color, desc }: { title: str
   );
 }
 
-function FeaturedCommunityCard({ name, members, category }: { name: string, members: string, category: string }) {
+function FeaturedCommunityCard({ name, members, category, state }: { name: string, members: string, category: string, state?: string }) {
   const [joined, setJoined] = useState(false);
   return (
     <div className="flex items-center justify-between p-6 bg-white rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-all group cursor-pointer">
@@ -1319,10 +1354,16 @@ function FeaturedCommunityCard({ name, members, category }: { name: string, memb
         </div>
         <div>
           <p className="font-bold text-slate-900">{name}</p>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-slate-400 font-medium">{members} members</span>
             <span className="w-1 h-1 bg-slate-200 rounded-full" />
             <span className="text-[10px] font-bold text-navy-600 uppercase tracking-tighter">{category}</span>
+            {state && (
+              <>
+                <span className="w-1 h-1 bg-slate-200 rounded-full" />
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">{state}</span>
+              </>
+            )}
           </div>
         </div>
       </div>

@@ -169,7 +169,8 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS communities (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    type TEXT NOT NULL -- State, Department, Interest
+    type TEXT NOT NULL, -- State, Department, Interest
+    state TEXT
   );
 `);
 
@@ -185,6 +186,9 @@ try { db.exec('ALTER TABLE jobs ADD COLUMN experience TEXT'); } catch (e) {}
 try { db.exec('ALTER TABLE jobs ADD COLUMN qualification TEXT'); } catch (e) {}
 try { db.exec('ALTER TABLE jobs ADD COLUMN apply_url TEXT'); } catch (e) {}
 try { db.exec('ALTER TABLE jobs ADD COLUMN sub_category TEXT'); } catch (e) {}
+
+// Migration for communities table
+try { db.exec('ALTER TABLE communities ADD COLUMN state TEXT'); } catch (e) {}
 
 // Seed initial data if empty
 const userCount = db.prepare('SELECT count(*) as count FROM users').get() as { count: number };

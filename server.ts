@@ -287,8 +287,32 @@ app.get("/api/courses", (req, res) => {
 });
 
 app.get("/api/communities", (req, res) => {
-  const communities = db.prepare('SELECT * FROM communities').all();
-  res.json(communities);
+  try {
+    const { state } = req.query;
+    let query = 'SELECT * FROM communities';
+    const params = [];
+    if (state) {
+      query += ' WHERE state = ?';
+      params.push(state);
+    }
+    const communities = db.prepare(query).all(...params);
+    res.json(communities);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch communities" });
+  }
+});
+
+app.post("/api/communities", (req, res) => {
+  try {
+    const { name, type, state } = req.body;
+    if (!name || !type) return res.status(400).json({ error: "Name and Type are required" });
+    const id = uuidv4();
+    db.prepare('INSERT INTO communities (id, name, type, state) VALUES (?, ?, ?, ?)').run(id, name, type, state || null);
+    res.json({ id, name, type, state });
+  } catch (err) {
+    console.error("Error creating community:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 export { app };
