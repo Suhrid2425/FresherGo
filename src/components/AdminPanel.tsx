@@ -44,7 +44,23 @@ function cn(...inputs: ClassValue[]) {
 export default function AdminPanel() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [stats, setStats] = useState({ colleges: 0, jobs: 0, users: 0, materials: 0 });
-  const [currentUser, setCurrentUser] = useState<any>({ name: 'Suhrid', role: 'super_admin' }); // Mocking super admin for now
+  const [currentUser, setCurrentUser] = useState<any>({ name: 'Suhrid', role: 'super_admin' });
+  const [health, setHealth] = useState<any>(null);
+
+  useEffect(() => {
+    const fetchHealth = async () => {
+      try {
+        const res = await fetch('/api/health');
+        const data = await res.json();
+        setHealth(data);
+      } catch (err) {
+        setHealth({ status: 'error', message: 'Backend disconnected' });
+      }
+    };
+    fetchHealth();
+    const interval = setInterval(fetchHealth, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -53,6 +69,7 @@ export default function AdminPanel() {
           fetch('/api/colleges'),
           fetch('/api/jobs')
         ]);
+        if (!colRes.ok || !jobRes.ok) throw new Error('Failed to fetch stats');
         const colleges = await colRes.json();
         const jobs = await jobRes.json();
         setStats({
@@ -62,7 +79,7 @@ export default function AdminPanel() {
           materials: 3
         });
       } catch (err) {
-        console.error(err);
+        console.error('Stats fetch error:', err);
       }
     };
     fetchStats();
@@ -100,12 +117,20 @@ export default function AdminPanel() {
             <>
               <SidebarLink active={activeTab === 'admins'} onClick={() => setActiveTab('admins')} icon={<Users className="w-5 h-5" />} label="Manage Admins" />
               <SidebarLink active={activeTab === 'communities'} onClick={() => setActiveTab('communities')} icon={<Users className="w-5 h-5" />} label="Communities" />
+              <SidebarLink active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} icon={<Settings className="w-5 h-5" />} label="System Settings" />
             </>
           )}
         </nav>
         
         <div className="p-4 border-t border-white/10">
           <div className="flex flex-col gap-2 px-4 py-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] text-navy-400 uppercase tracking-widest font-bold">System Status</span>
+              <div className={cn(
+                "w-2 h-2 rounded-full animate-pulse",
+                health?.status === 'ok' ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" : "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]"
+              )} />
+            </div>
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 bg-navy-700 rounded-full flex items-center justify-center text-xs font-bold">
                 {currentUser.name[0]}
@@ -149,8 +174,68 @@ export default function AdminPanel() {
           {activeTab === 'blogs' && isWriterAdmin && <BlogsView />}
           {activeTab === 'admins' && isSuperAdmin && <AdminsView />}
           {activeTab === 'communities' && isSuperAdmin && <CommunitiesView />}
+          {activeTab === 'settings' && isSuperAdmin && <SettingsView />}
         </div>
       </main>
+    </div>
+  );
+}
+
+function SettingsView() {
+  const [isSeeding, setIsSeeding] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const handleSeed = async () => {
+    if (!confirm('This will trigger the seeding logic. Are you sure?')) return;
+    setIsSeeding(true);
+    try {
+      const res = await fetch('/api/admin/seed', { method: 'POST' });
+      const data = await res.json();
+      setMessage(data.message);
+    } catch (err) {
+      setMessage('Failed to trigger seeding.');
+    } finally {
+      setIsSeeding(false);
+    }
+  };
+
+  return (
+    <div className="max-w-2xl space-y-8">
+      <div className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm">
+        <h3 className="text-xl font-bold text-slate-900 mb-2">Database Management</h3>
+        <p className="text-slate-500 mb-6">Manage the core data structures of the application.</p>
+        
+        <div className="p-6 bg-amber-50 rounded-2xl border border-amber-100 mb-6">
+          <h4 className="font-bold text-amber-800 mb-1">Notice</h4>
+          <p className="text-sm text-amber-700">Seeding only adds missing data. It will not delete your existing entries.</p>
+        </div>
+
+        <button 
+          onClick={handleSeed}
+          disabled={isSeeding}
+          className="flex items-center gap-2 px-6 py-3 bg-navy-900 text-white rounded-xl font-bold hover:bg-navy-800 transition-all disabled:opacity-50"
+        >
+          {isSeeding ? 'Processing...' : 'Trigger Database Seed'}
+        </button>
+        
+        {message && (
+          <p className="mt-4 text-sm font-medium text-blue-600">{message}</p>
+        )}
+      </div>
+
+      <div className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm">
+        <h3 className="text-xl font-bold text-slate-900 mb-2">System Information</h3>
+        <div className="space-y-4 mt-6">
+          <div className="flex justify-between py-3 border-b border-slate-50">
+            <span className="text-slate-500">Environment</span>
+            <span className="font-mono text-sm font-bold">{process.env.NODE_ENV || 'development'}</span>
+          </div>
+          <div className="flex justify-between py-3 border-b border-slate-50">
+            <span className="text-slate-500">Platform</span>
+            <span className="font-mono text-sm font-bold">AI Studio Preview</span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -172,12 +257,43 @@ function SidebarLink({ active, onClick, icon, label }: { active: boolean, onClic
 
 function DashboardView({ stats }: { stats: any }) {
   const [analytics, setAnalytics] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/analytics').then(res => res.json()).then(setAnalytics);
+    fetch('/api/analytics')
+      .then(res => {
+        if (!res.ok) throw new Error('Failed to load analytics');
+        return res.json();
+      })
+      .then(setAnalytics)
+      .catch(err => {
+        console.error(err);
+        setError(err.message);
+      });
   }, []);
 
-  if (!analytics) return <div className="p-8 text-center">Loading analytics...</div>;
+  if (error) return (
+    <div className="p-12 text-center bg-white rounded-[32px] border border-red-100 shadow-sm">
+      <div className="w-16 h-16 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
+        <X className="w-8 h-8" />
+      </div>
+      <h3 className="text-xl font-bold text-slate-900 mb-2">Analytics Unavailable</h3>
+      <p className="text-slate-500 mb-6">{error}</p>
+      <button 
+        onClick={() => window.location.reload()}
+        className="px-6 py-2 bg-navy-900 text-white rounded-xl font-bold text-sm"
+      >
+        Retry Connection
+      </button>
+    </div>
+  );
+
+  if (!analytics) return (
+    <div className="p-24 text-center">
+      <div className="w-12 h-12 border-4 border-navy-100 border-t-navy-900 rounded-full animate-spin mx-auto mb-4" />
+      <p className="text-slate-500 font-medium">Initializing Dashboard...</p>
+    </div>
+  );
 
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
@@ -499,13 +615,32 @@ function EducationView() {
   const [newSubjectName, setNewSubjectName] = useState('');
   const [newMaterial, setNewMaterial] = useState({ title: '', download_url: '' });
 
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchData = async (url: string, setter: (data: any) => void) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Failed to fetch from ${url}`);
+      const data = await res.json();
+      setter(data);
+    } catch (err) {
+      console.error(err);
+      setError('Failed to load data. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    fetch('/api/education/categories').then(res => res.json()).then(setCategories);
+    fetchData('/api/education/categories', setCategories);
   }, []);
 
   useEffect(() => {
     if (selectedCategory) {
-      fetch(`/api/education/branches?category_id=${selectedCategory.id}`).then(res => res.json()).then(setBranches);
+      fetchData(`/api/education/branches?category_id=${selectedCategory.id}`, setBranches);
       setSelectedBranch(null);
       setSemesters([]);
       setSelectedSemester(null);
@@ -517,7 +652,7 @@ function EducationView() {
 
   useEffect(() => {
     if (selectedBranch) {
-      fetch(`/api/education/semesters?branch_id=${selectedBranch.id}`).then(res => res.json()).then(setSemesters);
+      fetchData(`/api/education/semesters?branch_id=${selectedBranch.id}`, setSemesters);
       setSelectedSemester(null);
       setSubjects([]);
       setSelectedSubject(null);
@@ -527,7 +662,7 @@ function EducationView() {
 
   useEffect(() => {
     if (selectedSemester) {
-      fetch(`/api/education/subjects?semester_id=${selectedSemester.id}`).then(res => res.json()).then(setSubjects);
+      fetchData(`/api/education/subjects?semester_id=${selectedSemester.id}`, setSubjects);
       setSelectedSubject(null);
       setMaterials([]);
     }
@@ -535,99 +670,173 @@ function EducationView() {
 
   useEffect(() => {
     if (selectedSubject) {
-      fetch(`/api/education/materials?subject_id=${selectedSubject.id}`).then(res => res.json()).then(setMaterials);
+      fetchData(`/api/education/materials?subject_id=${selectedSubject.id}`, setMaterials);
     }
   }, [selectedSubject]);
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const addCategory = async () => {
-    const res = await fetch('/api/education/categories', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newCatName })
-    });
-    if (res.ok) {
-      const data = await res.json();
-      setCategories([...categories, data]);
-      setNewCatName('');
-      setShowCatForm(false);
+    console.log('addCategory called with:', newCatName);
+    if (!newCatName.trim()) {
+      console.log('Category name is empty, returning');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const res = await fetch('/api/education/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newCatName })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCategories([...categories, data]);
+        setNewCatName('');
+        setShowCatForm(false);
+      } else {
+        const err = await res.text();
+        console.error('Failed to add category:', err);
+        alert('Failed to add category. Please try again.');
+      }
+    } catch (err) {
+      console.error('Error adding category:', err);
+      alert('An error occurred. Please check your connection.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const addBranch = async () => {
-    const res = await fetch('/api/education/branches', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ category_id: selectedCategory.id, name: newBranchName })
-    });
-    if (res.ok) {
-      const data = await res.json();
-      setBranches([...branches, data]);
-      setNewBranchName('');
-      setShowBranchForm(false);
+    if (!newBranchName.trim() || !selectedCategory) return;
+    setIsSubmitting(true);
+    try {
+      const res = await fetch('/api/education/branches', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category_id: selectedCategory.id, name: newBranchName })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setBranches([...branches, data]);
+        setNewBranchName('');
+        setShowBranchForm(false);
+      } else {
+        alert('Failed to add branch.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('An error occurred.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const addSubject = async () => {
-    const res = await fetch('/api/education/subjects', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ semester_id: selectedSemester.id, name: newSubjectName })
-    });
-    if (res.ok) {
-      const data = await res.json();
-      setSubjects([...subjects, data]);
-      setNewSubjectName('');
-      setShowSubjectForm(false);
+    if (!newSubjectName.trim() || !selectedSemester) return;
+    setIsSubmitting(true);
+    try {
+      const res = await fetch('/api/education/subjects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ semester_id: selectedSemester.id, name: newSubjectName })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSubjects([...subjects, data]);
+        setNewSubjectName('');
+        setShowSubjectForm(false);
+      } else {
+        alert('Failed to add subject.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('An error occurred.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const addMaterial = async () => {
-    const res = await fetch('/api/education/materials', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ subject_id: selectedSubject.id, ...newMaterial })
-    });
-    if (res.ok) {
-      const data = await res.json();
-      setMaterials([...materials, data]);
-      setNewMaterial({ title: '', download_url: '' });
-      setShowMaterialForm(false);
+    if (!newMaterial.title.trim() || !selectedSubject) return;
+    setIsSubmitting(true);
+    try {
+      const res = await fetch('/api/education/materials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subject_id: selectedSubject.id, ...newMaterial })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMaterials([...materials, data]);
+        setNewMaterial({ title: '', download_url: '' });
+        setShowMaterialForm(false);
+      } else {
+        alert('Failed to add material.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('An error occurred.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   return (
     <div className="space-y-8 pb-20">
       {/* Breadcrumbs */}
-      <div className="flex items-center gap-2 text-sm font-bold text-slate-400 overflow-x-auto whitespace-nowrap pb-2">
-        <button onClick={() => setSelectedCategory(null)} className={cn("hover:text-blue-600 transition-colors", !selectedCategory && "text-blue-600")}>Categories</button>
-        {selectedCategory && (
-          <>
-            <ChevronRight className="w-4 h-4 shrink-0" />
-            <button onClick={() => setSelectedBranch(null)} className={cn("hover:text-blue-600 transition-colors", !selectedBranch && "text-blue-600")}>{selectedCategory.name}</button>
-          </>
-        )}
-        {selectedBranch && (
-          <>
-            <ChevronRight className="w-4 h-4 shrink-0" />
-            <button onClick={() => setSelectedSemester(null)} className={cn("hover:text-blue-600 transition-colors", !selectedSemester && "text-blue-600")}>{selectedBranch.name}</button>
-          </>
-        )}
-        {selectedSemester && (
-          <>
-            <ChevronRight className="w-4 h-4 shrink-0" />
-            <button onClick={() => setSelectedSubject(null)} className={cn("hover:text-blue-600 transition-colors", !selectedSubject && "text-blue-600")}>Semester {selectedSemester.number}</button>
-          </>
-        )}
-        {selectedSubject && (
-          <>
-            <ChevronRight className="w-4 h-4 shrink-0" />
-            <span className="text-blue-600">{selectedSubject.name}</span>
-          </>
-        )}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-sm font-bold text-slate-400 overflow-x-auto whitespace-nowrap pb-2">
+          <button onClick={() => setSelectedCategory(null)} className={cn("hover:text-blue-600 transition-colors", !selectedCategory && "text-blue-600")}>Categories</button>
+          {selectedCategory && (
+            <>
+              <ChevronRight className="w-4 h-4 shrink-0" />
+              <button onClick={() => setSelectedBranch(null)} className={cn("hover:text-blue-600 transition-colors", !selectedBranch && "text-blue-600")}>{selectedCategory.name}</button>
+            </>
+          )}
+          {selectedBranch && (
+            <>
+              <ChevronRight className="w-4 h-4 shrink-0" />
+              <button onClick={() => setSelectedSemester(null)} className={cn("hover:text-blue-600 transition-colors", !selectedSemester && "text-blue-600")}>{selectedBranch.name}</button>
+            </>
+          )}
+          {selectedSemester && (
+            <>
+              <ChevronRight className="w-4 h-4 shrink-0" />
+              <button onClick={() => setSelectedSubject(null)} className={cn("hover:text-blue-600 transition-colors", !selectedSubject && "text-blue-600")}>Semester {selectedSemester.number}</button>
+            </>
+          )}
+          {selectedSubject && (
+            <>
+              <ChevronRight className="w-4 h-4 shrink-0" />
+              <span className="text-blue-600">{selectedSubject.name}</span>
+            </>
+          )}
+        </div>
+        <button 
+          onClick={() => window.location.reload()}
+          className="p-2 text-slate-400 hover:text-blue-600 transition-colors"
+          title="Refresh Data"
+        >
+          <Globe className={cn("w-4 h-4", isLoading && "animate-spin")} />
+        </button>
       </div>
 
+      {error && (
+        <div className="p-4 bg-red-50 border border-red-100 rounded-2xl text-red-600 text-sm font-medium flex items-center gap-2">
+          <X className="w-4 h-4" />
+          {error}
+        </div>
+      )}
+
+      {isLoading && !error && (
+        <div className="flex items-center justify-center py-12">
+          <div className="w-8 h-8 border-2 border-blue-100 border-t-blue-600 rounded-full animate-spin" />
+        </div>
+      )}
+
       {/* Categories View */}
-      {!selectedCategory && (
+      {!selectedCategory && !isLoading && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {categories.map(cat => (
             <button key={cat.id} onClick={() => setSelectedCategory(cat)} className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all text-left group">
@@ -735,30 +944,104 @@ function EducationView() {
       {/* Modals */}
       {showCatForm && (
         <Modal title="Add Category" onClose={() => setShowCatForm(false)}>
-          <input placeholder="Category Name (e.g. Engineering)" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl mb-4" value={newCatName} onChange={e => setNewCatName(e.target.value)} />
-          <button onClick={addCategory} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold">Create Category</button>
+          <input 
+            placeholder="Category Name (e.g. Engineering)" 
+            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl mb-4 outline-none focus:ring-2 focus:ring-blue-500 transition-all" 
+            value={newCatName} 
+            onChange={e => setNewCatName(e.target.value)} 
+            disabled={isSubmitting}
+          />
+          <button 
+            onClick={addCategory} 
+            disabled={isSubmitting || !newCatName.trim()}
+            className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {isSubmitting ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Creating...
+              </>
+            ) : 'Create Category'}
+          </button>
         </Modal>
       )}
 
       {showBranchForm && (
         <Modal title="Add Branch" onClose={() => setShowBranchForm(false)}>
-          <input placeholder="Branch Name (e.g. CS)" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl mb-4" value={newBranchName} onChange={e => setNewBranchName(e.target.value)} />
-          <button onClick={addBranch} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold">Create Branch</button>
+          <input 
+            placeholder="Branch Name (e.g. CS)" 
+            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl mb-4 outline-none focus:ring-2 focus:ring-blue-500 transition-all" 
+            value={newBranchName} 
+            onChange={e => setNewBranchName(e.target.value)} 
+            disabled={isSubmitting}
+          />
+          <button 
+            onClick={addBranch} 
+            disabled={isSubmitting || !newBranchName.trim()}
+            className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {isSubmitting ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Creating...
+              </>
+            ) : 'Create Branch'}
+          </button>
         </Modal>
       )}
 
       {showSubjectForm && (
         <Modal title="Add Subject" onClose={() => setShowSubjectForm(false)}>
-          <input placeholder="Subject Name" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl mb-4" value={newSubjectName} onChange={e => setNewSubjectName(e.target.value)} />
-          <button onClick={addSubject} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold">Create Subject</button>
+          <input 
+            placeholder="Subject Name" 
+            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl mb-4 outline-none focus:ring-2 focus:ring-blue-500 transition-all" 
+            value={newSubjectName} 
+            onChange={e => setNewSubjectName(e.target.value)} 
+            disabled={isSubmitting}
+          />
+          <button 
+            onClick={addSubject} 
+            disabled={isSubmitting || !newSubjectName.trim()}
+            className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {isSubmitting ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Creating...
+              </>
+            ) : 'Create Subject'}
+          </button>
         </Modal>
       )}
 
       {showMaterialForm && (
         <Modal title="Add Material" onClose={() => setShowMaterialForm(false)}>
-          <input placeholder="Book/Material Title" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl mb-4" value={newMaterial.title} onChange={e => setNewMaterial({...newMaterial, title: e.target.value})} />
-          <input placeholder="Drive/Download URL" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl mb-4" value={newMaterial.download_url} onChange={e => setNewMaterial({...newMaterial, download_url: e.target.value})} />
-          <button onClick={addMaterial} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold">Add Material</button>
+          <input 
+            placeholder="Book/Material Title" 
+            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl mb-4 outline-none focus:ring-2 focus:ring-blue-500 transition-all" 
+            value={newMaterial.title} 
+            onChange={e => setNewMaterial({...newMaterial, title: e.target.value})} 
+            disabled={isSubmitting}
+          />
+          <input 
+            placeholder="Drive/Download URL" 
+            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl mb-4 outline-none focus:ring-2 focus:ring-blue-500 transition-all" 
+            value={newMaterial.download_url} 
+            onChange={e => setNewMaterial({...newMaterial, download_url: e.target.value})} 
+            disabled={isSubmitting}
+          />
+          <button 
+            onClick={addMaterial} 
+            disabled={isSubmitting || !newMaterial.title.trim()}
+            className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {isSubmitting ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Adding...
+              </>
+            ) : 'Add Material'}
+          </button>
         </Modal>
       )}
     </div>

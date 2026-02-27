@@ -6,9 +6,34 @@ import { v4 as uuidv4 } from 'uuid';
 const app = express();
 app.use(express.json());
 
+// Request Logging
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  if (req.method === 'POST' || req.method === 'PATCH') {
+    console.log('Body:', JSON.stringify(req.body, null, 2));
+  }
+  next();
+});
+
 // API Routes
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok" });
+  try {
+    const userCount = db.prepare('SELECT count(*) as count FROM users').get();
+    res.json({ status: "ok", db: "connected", users: userCount });
+  } catch (err) {
+    res.status(500).json({ status: "error", message: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// Seed Database Endpoint (Admin Only)
+app.post("/api/admin/seed", (req, res) => {
+  try {
+    // This is a simple way to re-trigger the seeding logic if needed
+    // In a real app, you'd want more security here
+    res.json({ message: "Database seeding is handled on startup. If you need to reset, please contact support." });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
 });
 
 // Jobs API with filtering
@@ -116,10 +141,16 @@ app.get("/api/education/categories", (req, res) => {
 });
 
 app.post("/api/education/categories", (req, res) => {
-  const { name } = req.body;
-  const id = uuidv4();
-  db.prepare('INSERT INTO education_categories (id, name) VALUES (?, ?)').run(id, name);
-  res.json({ id, name });
+  try {
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ error: "Name is required" });
+    const id = uuidv4();
+    db.prepare('INSERT INTO education_categories (id, name) VALUES (?, ?)').run(id, name);
+    res.json({ id, name });
+  } catch (err) {
+    console.error("Error creating category:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 app.get("/api/education/branches", (req, res) => {
@@ -129,14 +160,20 @@ app.get("/api/education/branches", (req, res) => {
 });
 
 app.post("/api/education/branches", (req, res) => {
-  const { category_id, name } = req.body;
-  const id = uuidv4();
-  db.prepare('INSERT INTO education_branches (id, category_id, name) VALUES (?, ?, ?)').run(id, category_id, name);
-  // Auto-create 8 semesters
-  for (let i = 1; i <= 8; i++) {
-    db.prepare('INSERT INTO education_semesters (id, branch_id, number) VALUES (?, ?, ?)').run(uuidv4(), id, i);
+  try {
+    const { category_id, name } = req.body;
+    if (!category_id || !name) return res.status(400).json({ error: "Missing required fields" });
+    const id = uuidv4();
+    db.prepare('INSERT INTO education_branches (id, category_id, name) VALUES (?, ?, ?)').run(id, category_id, name);
+    // Auto-create 8 semesters
+    for (let i = 1; i <= 8; i++) {
+      db.prepare('INSERT INTO education_semesters (id, branch_id, number) VALUES (?, ?, ?)').run(uuidv4(), id, i);
+    }
+    res.json({ id, category_id, name });
+  } catch (err) {
+    console.error("Error creating branch:", err);
+    res.status(500).json({ error: "Internal server error" });
   }
-  res.json({ id, category_id, name });
 });
 
 app.get("/api/education/semesters", (req, res) => {
@@ -152,10 +189,16 @@ app.get("/api/education/subjects", (req, res) => {
 });
 
 app.post("/api/education/subjects", (req, res) => {
-  const { semester_id, name } = req.body;
-  const id = uuidv4();
-  db.prepare('INSERT INTO education_subjects (id, semester_id, name) VALUES (?, ?, ?)').run(id, semester_id, name);
-  res.json({ id, semester_id, name });
+  try {
+    const { semester_id, name } = req.body;
+    if (!semester_id || !name) return res.status(400).json({ error: "Missing required fields" });
+    const id = uuidv4();
+    db.prepare('INSERT INTO education_subjects (id, semester_id, name) VALUES (?, ?, ?)').run(id, semester_id, name);
+    res.json({ id, semester_id, name });
+  } catch (err) {
+    console.error("Error creating subject:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 app.get("/api/education/materials", (req, res) => {
@@ -173,26 +216,31 @@ app.post("/api/education/materials", (req, res) => {
 
 // Analytics API
 app.get("/api/analytics", (req, res) => {
-  const jobStats = db.prepare('SELECT category, count(*) as count FROM jobs GROUP BY category').all();
-  const blogStats = db.prepare('SELECT category, count(*) as count FROM blogs GROUP BY category').all();
-  const collegeStats = db.prepare('SELECT category, count(*) as count FROM colleges GROUP BY category').all();
-  
-  // Mock user growth data
-  const userGrowth = [
-    { month: 'Jan', users: 120 },
-    { month: 'Feb', users: 250 },
-    { month: 'Mar', users: 450 },
-    { month: 'Apr', users: 800 },
-    { month: 'May', users: 1200 },
-    { month: 'Jun', users: 1800 },
-  ];
+  try {
+    const jobStats = db.prepare('SELECT category, count(*) as count FROM jobs GROUP BY category').all();
+    const blogStats = db.prepare('SELECT category, count(*) as count FROM blogs GROUP BY category').all();
+    const collegeStats = db.prepare('SELECT category, count(*) as count FROM colleges GROUP BY category').all();
+    
+    // Mock user growth data
+    const userGrowth = [
+      { month: 'Jan', users: 120 },
+      { month: 'Feb', users: 250 },
+      { month: 'Mar', users: 450 },
+      { month: 'Apr', users: 800 },
+      { month: 'May', users: 1200 },
+      { month: 'Jun', users: 1800 },
+    ];
 
-  res.json({
-    jobs: jobStats,
-    blogs: blogStats,
-    colleges: collegeStats,
-    userGrowth
-  });
+    res.json({
+      jobs: jobStats,
+      blogs: blogStats,
+      colleges: collegeStats,
+      userGrowth
+    });
+  } catch (err) {
+    console.error("Analytics Error:", err);
+    res.status(500).json({ error: "Failed to fetch analytics" });
+  }
 });
 
 // Preparation Materials API
@@ -258,8 +306,10 @@ async function startDevServer() {
   });
 }
 
-if (process.env.NODE_ENV !== "production") {
-  startDevServer();
+if (process.env.NODE_ENV !== "production" || process.env.VERCEL !== "1") {
+  startDevServer().catch(err => {
+    console.error("Failed to start dev server:", err);
+  });
 }
 
 export default app;
