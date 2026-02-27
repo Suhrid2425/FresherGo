@@ -1,6 +1,9 @@
 import Database from 'better-sqlite3';
+import path from 'path';
 
-const db = new Database('freshergo.db');
+const isVercel = process.env.VERCEL === '1';
+const dbPath = isVercel ? path.join('/tmp', 'freshergo.db') : 'freshergo.db';
+const db = new Database(dbPath);
 
 // Enable foreign keys
 db.pragma('foreign_keys = ON');

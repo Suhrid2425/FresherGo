@@ -3,9 +3,12 @@ import { createServer as createViteServer } from "vite";
 import db from "./src/db.ts";
 import { v4 as uuidv4 } from 'uuid';
 
+const app = express();
+app.use(express.json());
+
+export { app };
+
 async function startServer() {
-  const app = express();
-  app.use(express.json());
   const PORT = 3000;
 
   // API Routes
@@ -245,23 +248,22 @@ async function startServer() {
     res.json(communities);
   });
 
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
+  return app;
+}
+
+if (process.env.NODE_ENV !== "production") {
+  startServer().then(async (app) => {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
-  } else {
-    app.use(express.static("dist"));
-    app.get("*", (req, res) => {
-      res.sendFile("dist/index.html", { root: "." });
-    });
-  }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    const PORT = 3000;
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
   });
 }
 
-startServer();
+export default app;
