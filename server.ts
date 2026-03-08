@@ -434,8 +434,8 @@ app.delete("/api/communities/:id", (req, res) => {
   }
 });
 
-// Serve static files in production
-if (process.env.NODE_ENV === "production") {
+// Serve static files in production (only if not on Vercel)
+if (process.env.NODE_ENV === "production" && !process.env.VERCEL) {
   const distPath = path.join(process.cwd(), "dist");
   app.use(express.static(distPath));
   
