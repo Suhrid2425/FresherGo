@@ -1,9 +1,25 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 
-const isVercel = process.env.VERCEL === '1';
-const dbPath = isVercel ? path.join('/tmp', 'freshergo.db') : 'freshergo.db';
-const db = new Database(dbPath);
+let db: any;
+
+try {
+  const isVercel = process.env.VERCEL === '1';
+  const dbPath = isVercel ? path.join('/tmp', 'freshergo.db') : 'freshergo.db';
+  db = new Database(dbPath);
+} catch (err) {
+  console.error("Failed to initialize database:", err);
+  // Fallback to a mock or handle the error gracefully in routes
+  db = {
+    prepare: () => ({
+      run: () => ({}),
+      get: () => ({}),
+      all: () => []
+    }),
+    exec: () => ({}),
+    pragma: () => ({})
+  };
+}
 
 // Enable foreign keys
 db.pragma('foreign_keys = ON');
