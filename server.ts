@@ -434,19 +434,31 @@ app.delete("/api/communities/:id", (req, res) => {
   }
 });
 
-// Serve static files in production (only if not on Vercel)
-if (process.env.NODE_ENV === "production" && !process.env.VERCEL) {
-  const distPath = path.join(process.cwd(), "dist");
-  app.use(express.static(distPath));
+// Serve static files in production
+if (process.env.NODE_ENV === "production") {
+  const distPath = path.resolve(__dirname, "dist");
+  
+  // Serve static files from the dist directory
+  app.use(express.static(distPath, {
+    maxAge: '1d',
+    etag: true
+  }));
   
   // Handle SPA routing
   app.get("*", (req, res, next) => {
+    // Skip API routes
     if (req.path.startsWith('/api')) return next();
-    res.sendFile(path.join(distPath, "index.html"), (err) => {
+    
+    // Send index.html for all other routes
+    const indexPath = path.join(distPath, "index.html");
+    res.sendFile(indexPath, (err) => {
       if (err) {
-        // Fallback to root index.html if dist doesn't exist (e.g. during build/dev)
-        res.sendFile(path.join(process.cwd(), "index.html"), (err2) => {
-          if (err2) res.status(404).send("Not Found");
+        // Fallback for environments where dist might not be in the same place
+        const rootIndexPath = path.resolve(__dirname, "index.html");
+        res.sendFile(rootIndexPath, (err2) => {
+          if (err2) {
+            res.status(404).send("Application shell not found. Please ensure the project is built correctly.");
+          }
         });
       }
     });
