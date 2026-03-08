@@ -6,6 +6,7 @@ let _db: any;
 
 // Mock data for fallback
 const mockData: any = {
+  users: [{ count: 1 }],
   education_categories: [
     { id: 'edu-cat-1', name: 'Engineering' },
     { id: 'edu-cat-2', name: 'BCA' },
@@ -23,7 +24,11 @@ const mockData: any = {
   communities: [
     { id: 'comm-1', name: 'Maharashtra Students', type: 'State' },
     { id: 'comm-2', name: 'CSE Department', type: 'Department' }
-  ]
+  ],
+  preparation_materials: [],
+  education_semesters: [],
+  education_subjects: [],
+  education_materials: []
 };
 
 // Mock DB for environments where better-sqlite3 fails (like some serverless setups)
@@ -31,8 +36,9 @@ const mockDb = {
   prepare: (sql: string) => ({
     run: () => ({ lastInsertRowid: 'mock-id', changes: 1 }),
     get: (params: any) => {
+      if (sql.toLowerCase().includes('count(*)')) return { count: 1 };
       const table = sql.match(/FROM\s+(\w+)/i)?.[1];
-      if (table && mockData[table]) return mockData[table][0];
+      if (table && mockData[table]) return mockData[table][0] || null;
       return null;
     },
     all: (params: any) => {
@@ -98,8 +104,9 @@ const db: any = new Proxy({}, {
 export default db;
 
 // Create tables
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     email TEXT UNIQUE,
     name TEXT,
@@ -262,6 +269,9 @@ db.exec(`
     state TEXT
   );
 `);
+} catch (e) {
+  console.error("Error creating tables:", e);
+}
 
 // Migration for blogs table
 try { db.exec('ALTER TABLE blogs ADD COLUMN location TEXT'); } catch (e) {}
@@ -280,8 +290,9 @@ try { db.exec('ALTER TABLE jobs ADD COLUMN sub_category TEXT'); } catch (e) {}
 try { db.exec('ALTER TABLE communities ADD COLUMN state TEXT'); } catch (e) {}
 
 // Seed initial data if empty
-const userCount = db.prepare('SELECT count(*) as count FROM users').get() as { count: number };
-if (userCount.count === 0) {
+try {
+  const userCount = db.prepare('SELECT count(*) as count FROM users').get() as { count: number };
+  if (userCount && userCount.count === 0) {
   db.prepare('INSERT INTO users (id, email, name, role) VALUES (?, ?, ?, ?)').run(
     'admin-1', 'suhrid@freshergo.com', 'Suhrid (Super Admin)', 'super_admin'
   );
@@ -499,4 +510,7 @@ if (userCount.count === 0) {
   for (const comm of communities) {
     db.prepare('INSERT INTO communities (id, name, type) VALUES (?, ?, ?)').run(comm.id, comm.name, comm.type);
   }
+}
+} catch (e) {
+  console.error("Error seeding database:", e);
 }

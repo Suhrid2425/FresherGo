@@ -560,7 +560,17 @@ function StudyMaterialView({ onBack }: { onBack: () => void }) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetch('/api/education/categories').then(res => res.json()).then(setCategories);
+    setLoading(true);
+    fetch('/api/education/categories')
+      .then(res => res.json())
+      .then(data => {
+        setCategories(data);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error("Error fetching categories:", err);
+        setLoading(false);
+      });
   }, []);
 
   useEffect(() => {
@@ -627,17 +637,25 @@ function StudyMaterialView({ onBack }: { onBack: () => void }) {
 
       {/* Selection Grid */}
       {!selectedCategory && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {categories.map(cat => (
-            <button key={cat.id} onClick={() => setSelectedCategory(cat)} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all text-left group">
-              <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600 mb-6 group-hover:scale-110 transition-transform">
-                <BookOpen className="w-8 h-8" />
-              </div>
-              <h3 className="text-2xl font-bold text-navy-900 mb-2">{cat.name}</h3>
-              <p className="text-sm text-slate-500">Access curated notes and resources for {cat.name}.</p>
-            </button>
-          ))}
-        </div>
+        loading ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {[1, 2, 3].map(i => <div key={i} className="h-48 bg-slate-100 rounded-[40px] animate-pulse" />)}
+          </div>
+        ) : categories.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {categories.map(cat => (
+              <button key={cat.id} onClick={() => setSelectedCategory(cat)} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all text-left group">
+                <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600 mb-6 group-hover:scale-110 transition-transform">
+                  <BookOpen className="w-8 h-8" />
+                </div>
+                <h3 className="text-2xl font-bold text-navy-900 mb-2">{cat.name}</h3>
+                <p className="text-sm text-slate-500">Access curated notes and resources for {cat.name}.</p>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <EmptyState icon={<BookOpen className="w-8 h-8" />} title="No categories found" description="We are adding more study materials. Please check back later!" />
+        )
       )}
 
       {selectedCategory && !selectedBranch && (
