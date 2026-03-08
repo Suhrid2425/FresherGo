@@ -262,7 +262,7 @@ function SettingsView() {
         <div className="space-y-4 mt-6">
           <div className="flex justify-between py-3 border-b border-slate-50">
             <span className="text-slate-500">Environment</span>
-            <span className="font-mono text-sm font-bold">{process.env.NODE_ENV || 'development'}</span>
+            <span className="font-mono text-sm font-bold">{(import.meta.env.MODE) || 'development'}</span>
           </div>
           <div className="flex justify-between py-3 border-b border-slate-50">
             <span className="text-slate-500">Platform</span>

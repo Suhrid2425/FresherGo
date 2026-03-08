@@ -441,10 +441,10 @@ if (process.env.NODE_ENV === "production") {
   // Robust path discovery for the 'dist' folder in serverless environments
   const getDistPath = () => {
     const possiblePaths = [
+      path.join(process.cwd(), "dist"),
       path.resolve(__dirname, "dist"),
       path.resolve(__dirname, "..", "dist"),
-      path.join(process.cwd(), "dist"),
-      path.join(process.cwd(), "..", "dist")
+      path.join(process.cwd(), ".vercel/output/static") // Vercel Build Output API v3
     ];
     
     for (const p of possiblePaths) {
@@ -470,22 +470,27 @@ if (process.env.NODE_ENV === "production") {
 
     // SPA Routing: Serve index.html for non-API, non-file requests
     app.get("*", (req, res, next) => {
+      // Skip API routes
       if (req.path.startsWith('/api')) return next();
       
       // Prevent serving index.html for missing assets (prevents "Unexpected token <" error)
-      if (path.extname(req.path)) {
-        return res.status(404).send("Not Found");
+      // We check for common asset extensions
+      const ext = path.extname(req.path).toLowerCase();
+      const assetExtensions = ['.js', '.css', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.woff', '.woff2', '.ttf', '.eot', '.json', '.txt'];
+      if (assetExtensions.includes(ext)) {
+        return res.status(404).send("Asset not found");
       }
 
       const indexPath = path.join(distPath, "index.html");
       res.sendFile(indexPath, (err) => {
         if (err) {
-          console.error("Error sending index.html:", err);
-          res.status(404).send("Application shell not found.");
+          // Fallback to a basic response if index.html is missing
+          res.status(404).send("Application shell not found. Please ensure the project is built correctly.");
         }
       });
     });
   } else {
+    // If no dist folder found, we still need to handle API routes
     console.error("Could not locate 'dist' folder for static serving.");
   }
 }
