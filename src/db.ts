@@ -2,44 +2,79 @@ import path from 'path';
 import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
-let db: any;
+let _db: any;
+
+// Mock data for fallback
+const mockData: any = {
+  education_categories: [
+    { id: 'edu-cat-1', name: 'Engineering' },
+    { id: 'edu-cat-2', name: 'BCA' },
+    { id: 'edu-cat-3', name: 'BSc' }
+  ],
+  education_branches: [
+    { id: 'br-1', category_id: 'edu-cat-1', name: 'CS' },
+    { id: 'br-2', category_id: 'edu-cat-1', name: 'IT' },
+    { id: 'br-3', category_id: 'edu-cat-1', name: 'AI/ML' }
+  ],
+  jobs: [
+    { id: 'job-1', title: 'SDE Intern', company: 'Google', location: 'Remote', type: 'remote', timing: 'full-time', is_featured: 1 },
+    { id: 'job-2', title: 'Frontend Developer', company: 'Meta', location: 'London', type: 'hybrid', timing: 'full-time', is_featured: 1 }
+  ],
+  communities: [
+    { id: 'comm-1', name: 'Maharashtra Students', type: 'State' },
+    { id: 'comm-2', name: 'CSE Department', type: 'Department' }
+  ]
+};
 
 // Mock DB for environments where better-sqlite3 fails (like some serverless setups)
 const mockDb = {
-  prepare: () => ({
+  prepare: (sql: string) => ({
     run: () => ({ lastInsertRowid: 'mock-id', changes: 1 }),
-    get: () => null,
-    all: () => []
+    get: (params: any) => {
+      const table = sql.match(/FROM\s+(\w+)/i)?.[1];
+      if (table && mockData[table]) return mockData[table][0];
+      return null;
+    },
+    all: (params: any) => {
+      const table = sql.match(/FROM\s+(\w+)/i)?.[1];
+      if (table && mockData[table]) {
+        if (sql.includes('WHERE category_id = ?') && params) {
+          return mockData[table].filter((item: any) => item.category_id === params);
+        }
+        return mockData[table];
+      }
+      return [];
+    }
   }),
   exec: () => ({}),
   pragma: () => ({})
 };
 
 async function initDb() {
-  if (db) return db;
+  if (_db) return _db;
   
   try {
     const { default: Database } = await import('better-sqlite3');
     const isVercel = process.env.VERCEL === '1';
     const dbPath = isVercel ? path.join('/tmp', 'freshergo.db') : 'freshergo.db';
-    db = new Database(dbPath);
+    _db = new Database(dbPath);
     
     // Enable foreign keys
-    db.pragma('foreign_keys = ON');
+    _db.pragma('foreign_keys = ON');
     
     // Minimal tables setup if not exists (tables are already in the file, but we need to ensure they are created)
     // The original file had a lot of seed logic. We'll keep the export as a proxy.
   } catch (err) {
     console.error("Failed to initialize better-sqlite3:", err);
-    db = mockDb;
+    _db = mockDb;
   }
-  return db;
+  return _db;
 }
 
 // Proxy to handle database calls lazily
-const dbProxy: any = new Proxy({}, {
+const db: any = new Proxy({}, {
   get: (target, prop) => {
-    if (!db) {
+    if (!_db) {
       // This is a synchronous proxy, so we can't await initDb here easily
       // In a real app, we'd initialize synchronously if possible or use a different pattern
       // For now, we'll try to initialize synchronously using require if available, 
@@ -50,15 +85,17 @@ const dbProxy: any = new Proxy({}, {
         // Use a synchronous require for better-sqlite3 to avoid async issues in the proxy
         // This is only possible if the environment supports it
         const Database = require('better-sqlite3');
-        db = new Database(dbPath);
-        db.pragma('foreign_keys = ON');
+        _db = new Database(dbPath);
+        _db.pragma('foreign_keys = ON');
       } catch (e) {
-        db = mockDb;
+        _db = mockDb;
       }
     }
-    return db[prop];
+    return _db[prop];
   }
 });
+
+export default db;
 
 // Create tables
 db.exec(`
@@ -463,5 +500,3 @@ if (userCount.count === 0) {
     db.prepare('INSERT INTO communities (id, name, type) VALUES (?, ?, ?)').run(comm.id, comm.name, comm.type);
   }
 }
-
-export default dbProxy;
