@@ -444,7 +444,8 @@ if (process.env.NODE_ENV === "production") {
       path.join(process.cwd(), "dist"),
       path.resolve(__dirname, "dist"),
       path.resolve(__dirname, "..", "dist"),
-      path.join(process.cwd(), ".vercel/output/static") // Vercel Build Output API v3
+      path.join(process.cwd(), ".vercel/output/static"),
+      path.join("/", "var", "task", "dist") // Absolute path for Vercel
     ];
     
     for (const p of possiblePaths) {
