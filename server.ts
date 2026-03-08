@@ -1,8 +1,11 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import db from "./src/db.ts";
 import { v4 as uuidv4 } from 'uuid';
 import path from "path";
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(express.json());
@@ -431,18 +434,29 @@ app.delete("/api/communities/:id", (req, res) => {
   }
 });
 
-// Serve static files in production (only if not on Vercel)
-if (process.env.NODE_ENV === "production" && !process.env.VERCEL) {
+// Serve static files in production
+if (process.env.NODE_ENV === "production") {
   const distPath = path.join(process.cwd(), "dist");
   app.use(express.static(distPath));
-  app.get("*", (req, res) => {
-    res.sendFile(path.join(distPath, "index.html"));
+  
+  // Handle SPA routing
+  app.get("*", (req, res, next) => {
+    if (req.path.startsWith('/api')) return next();
+    res.sendFile(path.join(distPath, "index.html"), (err) => {
+      if (err) {
+        // Fallback to root index.html if dist doesn't exist (e.g. during build/dev)
+        res.sendFile(path.join(process.cwd(), "index.html"), (err2) => {
+          if (err2) res.status(404).send("Not Found");
+        });
+      }
+    });
   });
 }
 
 export { app };
 
 async function startDevServer() {
+  const { createServer: createViteServer } = await import("vite");
   const vite = await createViteServer({
     server: { middlewareMode: true },
     appType: "spa",
