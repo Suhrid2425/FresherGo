@@ -65,7 +65,7 @@ import AdSlot from './components/AdSlot';
 type Page = 'home' | 'education' | 'jobs' | 'college' | 'community' | 'admin';
 
 export default function App() {
-  const [activePage, setActivePage] = useState<Page>('jobs');
+  const [activePage, setActivePage] = useState<Page>('education');
   const [isStudentMenuOpen, setIsStudentMenuOpen] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
@@ -482,7 +482,7 @@ function EmptyState({ icon, title, description }: { icon: React.ReactNode, title
 }
 
 function EducationPage() {
-  const [view, setView] = useState<'hub' | 'study' | 'placement' | 'dept' | 'feed'>('hub');
+  const [view, setView] = useState<'hub' | 'study' | 'placement' | 'dept' | 'feed'>('study');
 
   if (view === 'study') return <StudyMaterialView onBack={() => setView('hub')} />;
   if (view === 'placement') return <PlacementMaterialView onBack={() => setView('hub')} />;
