@@ -2,13 +2,13 @@
   "version": 2,
   "cleanUrls": true,
   "trailingSlash": false,
-  "functions": {
-    "api/index.ts": {
-      "includeFiles": "dist/**"
-    }
-  },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index.ts" },
-    { "source": "/(.*)", "destination": "/api/index.ts" }
+    { "source": "/assets/(.*)", "destination": "/dist/assets/$1" },
+    { "source": "/logo.svg", "destination": "/dist/logo.svg" },
+    { "source": "/manifest.json", "destination": "/dist/manifest.json" },
+    { "source": "/sw.js", "destination": "/dist/sw.js" },
+    { "source": "/ads.txt", "destination": "/dist/ads.txt" },
+    { "source": "/((?!api|assets|logo\\.svg|manifest\\.json|sw\\.js|ads\\.txt).*)", "destination": "/dist/index.html" }
   ]
 }
