@@ -2,6 +2,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import db from "./src/db.ts";
 import { v4 as uuidv4 } from 'uuid';
+import path from "path";
 
 const app = express();
 app.use(express.json());
@@ -376,6 +377,15 @@ app.delete("/api/communities/:id", (req, res) => {
     res.status(500).json({ error: "Failed to delete community" });
   }
 });
+
+// Serve static files in production
+if (process.env.NODE_ENV === "production") {
+  const distPath = path.join(process.cwd(), "dist");
+  app.use(express.static(distPath));
+  app.get("*", (req, res) => {
+    res.sendFile(path.join(distPath, "index.html"));
+  });
+}
 
 export { app };
 
