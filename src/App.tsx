@@ -791,7 +791,7 @@ function JobsPage() {
 
   const categories = [
     { name: 'All', icon: LayoutGrid },
-    { name: 'Engineering', icon: Building2, sub: ['CS', 'IT', 'ECE', 'EE', 'ME', 'CE', 'CH', 'AE', 'IE', 'Others'] },
+    { name: 'Engineering', icon: Building2, sub: ['CS', 'IT', 'ECE', 'EE', 'ME', 'CE', 'CH', 'AE', 'IE', 'AI/ML', 'Others'] },
     { name: 'Finance', icon: DollarSign },
     { name: 'Marketing', icon: Megaphone },
     { name: 'BCA', icon: Code },

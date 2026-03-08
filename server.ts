@@ -114,6 +114,15 @@ app.delete("/api/jobs/:id", (req, res) => {
   res.json({ success: true });
 });
 
+app.patch("/api/jobs/:id", (req, res) => {
+  const fields = Object.keys(req.body);
+  const sets = fields.map(f => `${f} = ?`).join(', ');
+  const values = Object.values(req.body);
+  db.prepare(`UPDATE jobs SET ${sets} WHERE id = ?`).run(...values, req.params.id);
+  const updated = db.prepare('SELECT * FROM jobs WHERE id = ?').get(req.params.id);
+  res.json(updated);
+});
+
 // Blogs API
 app.get("/api/blogs", (req, res) => {
   const blogs = db.prepare('SELECT * FROM blogs ORDER BY created_at DESC').all();
@@ -132,6 +141,11 @@ app.post("/api/blogs", (req, res) => {
     blog.location, blog.type, blog.timing, blog.user_type
   );
   res.json(blog);
+});
+
+app.delete("/api/blogs/:id", (req, res) => {
+  db.prepare('DELETE FROM blogs WHERE id = ?').run(req.params.id);
+  res.json({ success: true });
 });
 
 // Education Structure API
@@ -214,6 +228,11 @@ app.post("/api/education/materials", (req, res) => {
   res.json({ id, subject_id, title, download_url });
 });
 
+app.delete("/api/education/materials/:id", (req, res) => {
+  db.prepare('DELETE FROM education_materials WHERE id = ?').run(req.params.id);
+  res.json({ success: true });
+});
+
 // Analytics API
 app.get("/api/analytics", (req, res) => {
   try {
@@ -221,6 +240,11 @@ app.get("/api/analytics", (req, res) => {
     const blogStats = db.prepare('SELECT category, count(*) as count FROM blogs GROUP BY category').all();
     const collegeStats = db.prepare('SELECT category, count(*) as count FROM colleges GROUP BY category').all();
     
+    const totalUsers = db.prepare("SELECT count(*) as count FROM users WHERE role = 'student'").get().count;
+    const totalAdmins = db.prepare("SELECT count(*) as count FROM users WHERE role != 'student'").get().count;
+    const totalCommunities = db.prepare("SELECT count(*) as count FROM communities").get().count;
+    const totalMaterials = db.prepare("SELECT count(*) as count FROM education_materials").get().count;
+
     // Mock user growth data
     const userGrowth = [
       { month: 'Jan', users: 120 },
@@ -228,14 +252,20 @@ app.get("/api/analytics", (req, res) => {
       { month: 'Mar', users: 450 },
       { month: 'Apr', users: 800 },
       { month: 'May', users: 1200 },
-      { month: 'Jun', users: 1800 },
+      { month: 'Jun', users: totalUsers || 1800 },
     ];
 
     res.json({
       jobs: jobStats,
       blogs: blogStats,
       colleges: collegeStats,
-      userGrowth
+      userGrowth,
+      summary: {
+        users: totalUsers,
+        admins: totalAdmins,
+        communities: totalCommunities,
+        materials: totalMaterials
+      }
     });
   } catch (err) {
     console.error("Analytics Error:", err);
@@ -255,6 +285,16 @@ app.get("/api/admins", (req, res) => {
   res.json(admins);
 });
 
+app.get("/api/users", (req, res) => {
+  const users = db.prepare("SELECT * FROM users WHERE role = 'student'").all();
+  res.json(users);
+});
+
+app.delete("/api/users/:id", (req, res) => {
+  db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
+  res.json({ success: true });
+});
+
 app.post("/api/admins", (req, res) => {
   const admin = { id: uuidv4(), ...req.body };
   db.prepare('INSERT INTO users (id, email, name, role) VALUES (?, ?, ?, ?)')
@@ -266,6 +306,19 @@ app.post("/api/admins", (req, res) => {
 app.get("/api/colleges", (req, res) => {
   const colleges = db.prepare('SELECT * FROM colleges').all();
   res.json(colleges);
+});
+
+app.delete("/api/colleges/:id", (req, res) => {
+  db.prepare('DELETE FROM colleges WHERE id = ?').run(req.params.id);
+  res.json({ success: true });
+});
+
+app.patch("/api/colleges/:id", (req, res) => {
+  const { name, category, city, state, nirf_rank, website } = req.body;
+  db.prepare('UPDATE colleges SET name = ?, category = ?, city = ?, state = ?, nirf_rank = ?, website = ? WHERE id = ?')
+    .run(name, category, city, state, nirf_rank, website, req.params.id);
+  const updated = db.prepare('SELECT * FROM colleges WHERE id = ?').get(req.params.id);
+  res.json(updated);
 });
 
 // Education API
@@ -304,14 +357,23 @@ app.get("/api/communities", (req, res) => {
 
 app.post("/api/communities", (req, res) => {
   try {
-    const { name, type, state } = req.body;
+    const { name, type, state, description, image_url } = req.body;
     if (!name || !type) return res.status(400).json({ error: "Name and Type are required" });
     const id = uuidv4();
-    db.prepare('INSERT INTO communities (id, name, type, state) VALUES (?, ?, ?, ?)').run(id, name, type, state || null);
-    res.json({ id, name, type, state });
+    db.prepare('INSERT INTO communities (id, name, type, state, description, image_url) VALUES (?, ?, ?, ?, ?, ?)').run(id, name, type, state || null, description || null, image_url || null);
+    res.json({ id, name, type, state, description, image_url });
   } catch (err) {
     console.error("Error creating community:", err);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.delete("/api/communities/:id", (req, res) => {
+  try {
+    db.prepare('DELETE FROM communities WHERE id = ?').run(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to delete community" });
   }
 });
 

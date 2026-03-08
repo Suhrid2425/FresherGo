@@ -51,11 +51,33 @@ const INDIAN_STATES = [
   "Delhi", "Jammu and Kashmir", "Ladakh", "Lakshadweep", "Puducherry"
 ];
 
+function Toast({ message, type, onClose }: { message: string, type: 'success' | 'error', onClose: () => void }) {
+  useEffect(() => {
+    const timer = setTimeout(onClose, 3000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  return (
+    <div className={cn(
+      "fixed bottom-8 right-8 z-[200] px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-in slide-in-from-right-full duration-300",
+      type === 'success' ? "bg-emerald-600 text-white" : "bg-red-600 text-white"
+    )}>
+      {type === 'success' ? <Globe className="w-5 h-5" /> : <X className="w-5 h-5" />}
+      <span className="font-bold text-sm">{message}</span>
+    </div>
+  );
+}
+
 export default function AdminPanel() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [stats, setStats] = useState({ colleges: 0, jobs: 0, users: 0, materials: 0 });
+  const [stats, setStats] = useState({ colleges: 0, jobs: 0, users: 0, materials: 0, admins: 0, communities: 0 });
+  const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
   const [currentUser, setCurrentUser] = useState<any>({ name: 'Suhrid', role: 'super_admin' });
   const [health, setHealth] = useState<any>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+  };
 
   useEffect(() => {
     const fetchHealth = async () => {
@@ -75,18 +97,16 @@ export default function AdminPanel() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const [colRes, jobRes] = await Promise.all([
-          fetch('/api/colleges'),
-          fetch('/api/jobs')
-        ]);
-        if (!colRes.ok || !jobRes.ok) throw new Error('Failed to fetch stats');
-        const colleges = await colRes.json();
-        const jobs = await jobRes.json();
+        const res = await fetch('/api/analytics');
+        if (!res.ok) throw new Error('Failed to fetch stats');
+        const data = await res.json();
         setStats({
-          colleges: colleges.length,
-          jobs: jobs.length,
-          users: 3,
-          materials: 3
+          colleges: data.colleges.reduce((acc: number, curr: any) => acc + curr.count, 0),
+          jobs: data.jobs.reduce((acc: number, curr: any) => acc + curr.count, 0),
+          users: data.summary.users,
+          materials: data.summary.materials,
+          admins: data.summary.admins,
+          communities: data.summary.communities
         });
       } catch (err) {
         console.error('Stats fetch error:', err);
@@ -125,6 +145,7 @@ export default function AdminPanel() {
 
           {isSuperAdmin && (
             <>
+              <SidebarLink active={activeTab === 'users'} onClick={() => setActiveTab('users')} icon={<Users className="w-5 h-5" />} label="Users" />
               <SidebarLink active={activeTab === 'admins'} onClick={() => setActiveTab('admins')} icon={<Users className="w-5 h-5" />} label="Manage Admins" />
               <SidebarLink active={activeTab === 'communities'} onClick={() => setActiveTab('communities')} icon={<Users className="w-5 h-5" />} label="Communities" />
               <SidebarLink active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} icon={<Settings className="w-5 h-5" />} label="System Settings" />
@@ -171,22 +192,25 @@ export default function AdminPanel() {
           <div className="flex items-center gap-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input type="text" placeholder="Search..." className="pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-navy-500" />
+              <input type="text" placeholder="Global Search..." className="pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-navy-500" />
             </div>
           </div>
         </header>
 
         <div className="flex-1 overflow-auto p-8">
           {activeTab === 'dashboard' && <DashboardView stats={stats} />}
-          {activeTab === 'colleges' && isModerateAdmin && <CollegesView />}
-          {activeTab === 'jobs' && isModerateAdmin && <JobsView userRole={currentUser.role} />}
-          {activeTab === 'education' && isModerateAdmin && <EducationView />}
-          {activeTab === 'blogs' && isWriterAdmin && <BlogsView />}
-          {activeTab === 'admins' && isSuperAdmin && <AdminsView />}
-          {activeTab === 'communities' && isSuperAdmin && <CommunitiesView />}
+          {activeTab === 'colleges' && isModerateAdmin && <CollegesView showToast={showToast} />}
+          {activeTab === 'jobs' && isModerateAdmin && <JobsView userRole={currentUser.role} showToast={showToast} />}
+          {activeTab === 'education' && isModerateAdmin && <EducationView showToast={showToast} />}
+          {activeTab === 'blogs' && isWriterAdmin && <BlogsView showToast={showToast} />}
+          {activeTab === 'users' && isSuperAdmin && <UsersView showToast={showToast} />}
+          {activeTab === 'admins' && isSuperAdmin && <AdminsView showToast={showToast} />}
+          {activeTab === 'communities' && isSuperAdmin && <CommunitiesView showToast={showToast} />}
           {activeTab === 'settings' && isSuperAdmin && <SettingsView />}
         </div>
       </main>
+
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   );
 }
@@ -309,40 +333,81 @@ function DashboardView({ stats }: { stats: any }) {
 
   return (
     <div className="space-y-8 pb-12">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard label="Total Colleges" value={stats.colleges} icon={<Building2 className="w-6 h-6" />} color="text-blue-600" bg="bg-blue-50" />
-        <StatCard label="Active Jobs" value={stats.jobs} icon={<Briefcase className="w-6 h-6" />} color="text-emerald-600" bg="bg-emerald-50" />
-        <StatCard label="Total Users" value={stats.users} icon={<Users className="w-6 h-6" />} color="text-purple-600" bg="bg-purple-50" />
-        <StatCard label="Materials" value={stats.materials} icon={<BookOpen className="w-6 h-6" />} color="text-amber-600" bg="bg-amber-50" />
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+        <StatCard label="Colleges" value={stats.colleges} icon={<Building2 className="w-5 h-5" />} color="text-blue-600" bg="bg-blue-50" />
+        <StatCard label="Jobs" value={stats.jobs} icon={<Briefcase className="w-5 h-5" />} color="text-emerald-600" bg="bg-emerald-50" />
+        <StatCard label="Users" value={stats.users} icon={<Users className="w-5 h-5" />} color="text-purple-600" bg="bg-purple-50" />
+        <StatCard label="Materials" value={stats.materials} icon={<BookOpen className="w-5 h-5" />} color="text-amber-600" bg="bg-amber-50" />
+        <StatCard label="Admins" value={stats.admins} icon={<Users className="w-5 h-5" />} color="text-rose-600" bg="bg-rose-50" />
+        <StatCard label="Groups" value={stats.communities} icon={<Users className="w-5 h-5" />} color="text-indigo-600" bg="bg-indigo-50" />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* User Growth Chart */}
-        <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm">
-          <h3 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
-            <Users className="w-5 h-5 text-blue-500" />
-            User Growth (Monthly)
-          </h3>
-          <div className="h-[300px] w-full">
+        <div className="lg:col-span-2 bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm">
+          <div className="flex items-center justify-between mb-8">
+            <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <Users className="w-5 h-5 text-blue-500" />
+              Platform Growth
+            </h3>
+            <select className="text-xs font-bold text-slate-400 bg-slate-50 border-none rounded-lg p-2 outline-none">
+              <option>Last 6 Months</option>
+              <option>Last Year</option>
+            </select>
+          </div>
+          <div className="h-[350px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={analytics.userGrowth}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
                 <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
                 <Tooltip 
-                  contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'}}
+                  contentStyle={{borderRadius: '24px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)'}}
                 />
-                <Line type="monotone" dataKey="users" stroke="#3b82f6" strokeWidth={3} dot={{r: 6, fill: '#3b82f6', strokeWidth: 2, stroke: '#fff'}} activeDot={{r: 8}} />
+                <Line type="monotone" dataKey="users" stroke="#3b82f6" strokeWidth={4} dot={{r: 6, fill: '#3b82f6', strokeWidth: 2, stroke: '#fff'}} activeDot={{r: 8, strokeWidth: 0}} />
               </LineChart>
             </ResponsiveContainer>
           </div>
         </div>
 
+        {/* Recent Activity */}
+        <div className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm flex flex-col">
+          <h3 className="text-lg font-bold text-slate-900 mb-6 flex items-center justify-between">
+            Recent Activity
+            <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded uppercase tracking-wider">Live</span>
+          </h3>
+          <div className="space-y-6 flex-1">
+            {[
+              { title: 'New Job: SDE Intern', time: '10 mins ago', icon: <Plus className="w-4 h-4" />, color: 'bg-blue-50 text-blue-600' },
+              { title: 'New Blog: Engineering Prep', time: '1 hour ago', icon: <FileText className="w-4 h-4" />, color: 'bg-emerald-50 text-emerald-600' },
+              { title: 'New College: IIT Bombay', time: '3 hours ago', icon: <Building2 className="w-4 h-4" />, color: 'bg-purple-50 text-purple-600' },
+              { title: 'User Signed Up: Amit Kumar', time: '5 hours ago', icon: <Users className="w-4 h-4" />, color: 'bg-amber-50 text-amber-600' },
+              { title: 'New Community: AI/ML', time: '8 hours ago', icon: <Plus className="w-4 h-4" />, color: 'bg-indigo-50 text-indigo-600' },
+            ].map((activity, i) => (
+              <div key={i} className="flex items-center justify-between group cursor-pointer">
+                <div className="flex items-center gap-4">
+                  <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110", activity.color)}>
+                    {activity.icon}
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-slate-900 group-hover:text-blue-600 transition-colors">{activity.title}</p>
+                    <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">{activity.time}</p>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-slate-200 group-hover:text-blue-400 transition-all group-hover:translate-x-1" />
+              </div>
+            ))}
+          </div>
+          <button className="mt-8 w-full py-3 text-sm font-bold text-slate-400 hover:text-blue-600 transition-colors border-t border-slate-50">View All Activity</button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         {/* Jobs by Category */}
-        <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm">
-          <h3 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
+        <div className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm">
+          <h3 className="text-lg font-bold text-slate-900 mb-8 flex items-center gap-2">
             <Briefcase className="w-5 h-5 text-emerald-500" />
-            Jobs by Category
+            Jobs Distribution
           </h3>
           <div className="h-[300px] w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -350,8 +415,8 @@ function DashboardView({ stats }: { stats: any }) {
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="category" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10}} />
                 <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
-                <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'}} />
-                <Bar dataKey="count" radius={[8, 8, 0, 0]}>
+                <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '24px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)'}} />
+                <Bar dataKey="count" radius={[10, 10, 0, 0]} barSize={40}>
                   {analytics.jobs.map((entry: any, index: number) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
@@ -362,10 +427,10 @@ function DashboardView({ stats }: { stats: any }) {
         </div>
 
         {/* Colleges by Category */}
-        <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm">
-          <h3 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
+        <div className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm">
+          <h3 className="text-lg font-bold text-slate-900 mb-8 flex items-center gap-2">
             <Building2 className="w-5 h-5 text-purple-500" />
-            Colleges by Category
+            College Categories
           </h3>
           <div className="h-[300px] w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -374,45 +439,20 @@ function DashboardView({ stats }: { stats: any }) {
                   data={analytics.colleges}
                   cx="50%"
                   cy="50%"
-                  innerRadius={60}
-                  outerRadius={100}
-                  paddingAngle={5}
+                  innerRadius={80}
+                  outerRadius={110}
+                  paddingAngle={8}
                   dataKey="count"
                   nameKey="category"
+                  stroke="none"
                 >
                   {analytics.colleges.map((entry: any, index: number) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'}} />
+                <Tooltip contentStyle={{borderRadius: '24px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)'}} />
               </PieChart>
             </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Recent Activity */}
-        <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm">
-          <h3 className="text-lg font-bold text-slate-900 mb-6">Recent Activity</h3>
-          <div className="space-y-4">
-            {[
-              { title: 'New Job: SDE Intern', time: '10 mins ago', icon: <Plus className="w-4 h-4" />, color: 'bg-blue-50 text-blue-600' },
-              { title: 'New Blog: Engineering Prep', time: '1 hour ago', icon: <FileText className="w-4 h-4" />, color: 'bg-emerald-50 text-emerald-600' },
-              { title: 'New College: IIT Bombay', time: '3 hours ago', icon: <Building2 className="w-4 h-4" />, color: 'bg-purple-50 text-purple-600' },
-              { title: 'User Signed Up: Amit Kumar', time: '5 hours ago', icon: <Users className="w-4 h-4" />, color: 'bg-amber-50 text-amber-600' },
-            ].map((activity, i) => (
-              <div key={i} className="flex items-center justify-between py-3 border-b border-slate-50 last:border-0">
-                <div className="flex items-center gap-3">
-                  <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center", activity.color)}>
-                    {activity.icon}
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-slate-900">{activity.title}</p>
-                    <p className="text-xs text-slate-500">{activity.time}</p>
-                  </div>
-                </div>
-                <ChevronRight className="w-4 h-4 text-slate-300" />
-              </div>
-            ))}
           </div>
         </div>
       </div>
@@ -434,9 +474,11 @@ function StatCard({ label, value, icon, color, bg }: { label: string, value: num
   );
 }
 
-function JobsView({ userRole }: { userRole: string }) {
+function JobsView({ userRole, showToast }: { userRole: string, showToast: (m: string, t?: 'success' | 'error') => void }) {
   const [jobs, setJobs] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
+  const [search, setSearch] = useState('');
+  const [editingJob, setEditingJob] = useState<any>(null);
   const [formData, setFormData] = useState({
     title: '', company: '', location: '', category: 'Engineering', sub_category: '', type: 'In Office', timing: 'Full Time',
     salary: '', is_internship: 0, is_competition: 0, is_featured: 0, user_type: 'Student', domain: '', course: '',
@@ -448,17 +490,32 @@ function JobsView({ userRole }: { userRole: string }) {
     fetch('/api/jobs').then(res => res.json()).then(setJobs);
   }, []);
 
+  useEffect(() => {
+    if (editingJob) {
+      setFormData({ ...editingJob });
+      setShowForm(true);
+    }
+  }, [editingJob]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await fetch('/api/jobs', {
-      method: 'POST',
+    const method = editingJob ? 'PATCH' : 'POST';
+    const url = editingJob ? `/api/jobs/${editingJob.id}` : '/api/jobs';
+    
+    const res = await fetch(url, {
+      method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(formData)
     });
     if (res.ok) {
-      const newJob = await res.json();
-      setJobs([newJob, ...jobs]);
+      const savedJob = await res.json();
+      if (editingJob) {
+        setJobs(jobs.map(j => j.id === editingJob.id ? savedJob : j));
+      } else {
+        setJobs([savedJob, ...jobs]);
+      }
       setShowForm(false);
+      setEditingJob(null);
       setFormData({
         title: '', company: '', location: '', category: 'Engineering', sub_category: '', type: 'In Office', timing: 'Full Time',
         salary: '', is_internship: 0, is_competition: 0, is_featured: 0, user_type: 'Student', domain: '', course: '',
@@ -466,6 +523,11 @@ function JobsView({ userRole }: { userRole: string }) {
       });
     }
   };
+
+  const filteredJobs = jobs.filter(j => 
+    j.title.toLowerCase().includes(search.toLowerCase()) || 
+    j.company.toLowerCase().includes(search.toLowerCase())
+  );
 
   const handleDelete = async (id: string) => {
     if (confirm('Are you sure you want to delete this job?')) {
@@ -495,17 +557,32 @@ function JobsView({ userRole }: { userRole: string }) {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-slate-900">Manage Jobs & Internships</h2>
-        <button 
-          onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 px-4 py-2 bg-navy-900 text-white rounded-lg font-bold text-sm hover:bg-navy-800 transition-all"
-        >
-          <Plus className="w-4 h-4" />
-          {showForm ? 'Cancel' : 'Add New Listing'}
-        </button>
+        <div className="flex items-center gap-4">
+          <SearchInput value={search} onChange={setSearch} placeholder="Search jobs or companies..." />
+          <button 
+            onClick={() => {
+              setEditingJob(null);
+              setFormData({
+                title: '', company: '', location: '', category: 'Engineering', sub_category: '', type: 'In Office', timing: 'Full Time',
+                salary: '', is_internship: 0, is_competition: 0, is_featured: 0, user_type: 'Student', domain: '', course: '',
+                content: '', experience: '', qualification: '', apply_url: ''
+              });
+              setShowForm(!showForm);
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-navy-900 text-white rounded-lg font-bold text-sm hover:bg-navy-800 transition-all shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            {showForm ? 'Cancel' : 'Add New Listing'}
+          </button>
+        </div>
       </div>
 
       {showForm && (
         <form onSubmit={handleSubmit} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in zoom-in-95 duration-200">
+          <div className="md:col-span-2 flex justify-between items-center border-b border-slate-100 pb-4 mb-2">
+            <h3 className="font-bold text-slate-900">{editingJob ? 'Edit Listing' : 'New Listing'}</h3>
+            {editingJob && <button type="button" onClick={() => { setEditingJob(null); setShowForm(false); }} className="text-xs text-slate-400 hover:text-slate-600">Clear Edit</button>}
+          </div>
           <input placeholder="Job Title" className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-sm" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} required />
           <input placeholder="Company Name" className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-sm" value={formData.company} onChange={e => setFormData({...formData, company: e.target.value})} required />
           <input placeholder="Location" className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-sm" value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} required />
@@ -516,7 +593,7 @@ function JobsView({ userRole }: { userRole: string }) {
           {formData.category === 'Engineering' && (
             <select className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-sm" value={formData.sub_category} onChange={e => setFormData({...formData, sub_category: e.target.value})}>
               <option value="">Select Branch</option>
-              {['CS', 'IT', 'ECE', 'EE', 'ME', 'CE', 'CH', 'AE', 'IE', 'Others'].map(b => <option key={b}>{b}</option>)}
+              {['CS', 'IT', 'ECE', 'EE', 'ME', 'CE', 'CH', 'AE', 'IE', 'AI/ML', 'Others'].map(b => <option key={b}>{b}</option>)}
             </select>
           )}
           <input placeholder="Experience (e.g. 0-2 years)" className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-sm" value={formData.experience} onChange={e => setFormData({...formData, experience: e.target.value})} />
@@ -552,12 +629,14 @@ function JobsView({ userRole }: { userRole: string }) {
               Competition
             </label>
           </div>
-          <button type="submit" className="md:col-span-2 py-3 bg-navy-900 text-white rounded-xl font-bold">Post Opportunity</button>
+          <button type="submit" className="md:col-span-2 py-3 bg-navy-900 text-white rounded-xl font-bold">
+            {editingJob ? 'Update Opportunity' : 'Post Opportunity'}
+          </button>
         </form>
       )}
 
       <div className="grid grid-cols-1 gap-4">
-        {jobs.map(job => (
+        {filteredJobs.map(job => (
           <div key={job.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
             <div className="flex items-center gap-4">
               <div className={cn(
@@ -593,7 +672,7 @@ function JobsView({ userRole }: { userRole: string }) {
                 </label>
               )}
               <div className="flex gap-2">
-                <button className="p-2 text-slate-400 hover:text-navy-700 transition-colors"><Edit className="w-4 h-4" /></button>
+                <button onClick={() => setEditingJob(job)} className="p-2 text-slate-400 hover:text-navy-700 transition-colors"><Edit className="w-4 h-4" /></button>
                 <button onClick={() => handleDelete(job.id)} className="p-2 text-slate-400 hover:text-red-600 transition-colors"><Trash2 className="w-4 h-4" /></button>
               </div>
             </div>
@@ -604,7 +683,7 @@ function JobsView({ userRole }: { userRole: string }) {
   );
 }
 
-function EducationView() {
+function EducationView({ showToast }: { showToast: (m: string, t?: 'success' | 'error') => void }) {
   const [categories, setCategories] = useState<any[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<any>(null);
   const [branches, setBranches] = useState<any[]>([]);
@@ -614,6 +693,7 @@ function EducationView() {
   const [subjects, setSubjects] = useState<any[]>([]);
   const [selectedSubject, setSelectedSubject] = useState<any>(null);
   const [materials, setMaterials] = useState<any[]>([]);
+  const [search, setSearch] = useState('');
 
   const [showCatForm, setShowCatForm] = useState(false);
   const [showBranchForm, setShowBranchForm] = useState(false);
@@ -687,11 +767,7 @@ function EducationView() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const addCategory = async () => {
-    console.log('addCategory called with:', newCatName);
-    if (!newCatName.trim()) {
-      console.log('Category name is empty, returning');
-      return;
-    }
+    if (!newCatName.trim()) return;
     setIsSubmitting(true);
     try {
       const res = await fetch('/api/education/categories', {
@@ -704,14 +780,12 @@ function EducationView() {
         setCategories([...categories, data]);
         setNewCatName('');
         setShowCatForm(false);
+        showToast('Category added successfully');
       } else {
-        const err = await res.text();
-        console.error('Failed to add category:', err);
-        alert('Failed to add category. Please try again.');
+        showToast('Failed to add category', 'error');
       }
     } catch (err) {
-      console.error('Error adding category:', err);
-      alert('An error occurred. Please check your connection.');
+      showToast('Network error', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -731,12 +805,12 @@ function EducationView() {
         setBranches([...branches, data]);
         setNewBranchName('');
         setShowBranchForm(false);
+        showToast('Branch added successfully');
       } else {
-        alert('Failed to add branch.');
+        showToast('Failed to add branch', 'error');
       }
     } catch (err) {
-      console.error(err);
-      alert('An error occurred.');
+      showToast('Network error', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -756,12 +830,12 @@ function EducationView() {
         setSubjects([...subjects, data]);
         setNewSubjectName('');
         setShowSubjectForm(false);
+        showToast('Subject added successfully');
       } else {
-        alert('Failed to add subject.');
+        showToast('Failed to add subject', 'error');
       }
     } catch (err) {
-      console.error(err);
-      alert('An error occurred.');
+      showToast('Network error', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -781,16 +855,35 @@ function EducationView() {
         setMaterials([...materials, data]);
         setNewMaterial({ title: '', download_url: '' });
         setShowMaterialForm(false);
+        showToast('Material added successfully');
       } else {
-        alert('Failed to add material.');
+        showToast('Failed to add material', 'error');
       }
     } catch (err) {
-      console.error(err);
-      alert('An error occurred.');
+      showToast('Network error', 'error');
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  const deleteMaterial = async (id: string) => {
+    if (!confirm('Delete this material?')) return;
+    try {
+      const res = await fetch(`/api/education/materials/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setMaterials(materials.filter(m => m.id !== id));
+        showToast('Material deleted successfully');
+      } else {
+        showToast('Failed to delete material', 'error');
+      }
+    } catch (err) {
+      showToast('Network error', 'error');
+    }
+  };
+
+  const filteredMaterials = materials.filter(m => 
+    m.title.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <div className="space-y-8 pb-20">
@@ -917,16 +1010,19 @@ function EducationView() {
         <div className="space-y-6">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-bold text-slate-900">Materials for {selectedSubject.name}</h3>
-            <button onClick={() => setShowMaterialForm(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-all">
-              <Plus className="w-4 h-4" />
-              Add Material
-            </button>
+            <div className="flex items-center gap-4">
+              <SearchInput value={search} onChange={setSearch} placeholder="Search materials..." />
+              <button onClick={() => setShowMaterialForm(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-all shrink-0">
+                <Plus className="w-4 h-4" />
+                Add Material
+              </button>
+            </div>
           </div>
           <div className="grid grid-cols-1 gap-4">
-            {materials.map(mat => (
-              <div key={mat.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+            {filteredMaterials.map(mat => (
+              <div key={mat.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between group">
                 <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400">
+                  <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400 group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors">
                     <FileText className="w-5 h-5" />
                   </div>
                   <div>
@@ -937,14 +1033,14 @@ function EducationView() {
                     </a>
                   </div>
                 </div>
-                <button className="p-2 text-slate-400 hover:text-red-600 transition-colors">
+                <button onClick={() => deleteMaterial(mat.id)} className="p-2 text-slate-300 hover:text-red-600 transition-colors opacity-0 group-hover:opacity-100">
                   <Trash2 className="w-4 h-4" />
                 </button>
               </div>
             ))}
-            {materials.length === 0 && (
+            {filteredMaterials.length === 0 && (
               <div className="text-center py-12 bg-slate-50 rounded-[32px] border-2 border-dashed border-slate-200">
-                <p className="text-slate-500 font-medium">No materials added yet.</p>
+                <p className="text-slate-500 font-medium">No materials found.</p>
               </div>
             )}
           </div>
@@ -1073,10 +1169,115 @@ function Modal({ title, children, onClose }: { title: string, children: React.Re
   );
 }
 
-function CommunitiesView() {
+function SearchInput({ value, onChange, placeholder = "Search..." }: { value: string, onChange: (v: string) => void, placeholder?: string }) {
+  return (
+    <div className="relative w-full max-w-md">
+      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+      <input 
+        type="text" 
+        value={value} 
+        onChange={(e) => onChange(e.target.value)} 
+        placeholder={placeholder}
+        className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+      />
+    </div>
+  );
+}
+
+function UsersView({ showToast }: { showToast: (m: string, t?: 'success' | 'error') => void }) {
+  const [users, setUsers] = useState<any[]>([]);
+  const [search, setSearch] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/users')
+      .then(res => res.json())
+      .then(data => {
+        setUsers(data);
+        setIsLoading(false);
+      })
+      .catch(() => setIsLoading(false));
+  }, []);
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this user?')) return;
+    try {
+      const res = await fetch(`/api/users/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setUsers(users.filter(u => u.id !== id));
+        showToast('User deleted successfully');
+      } else {
+        showToast('Failed to delete user', 'error');
+      }
+    } catch (err) {
+      showToast('Network error', 'error');
+    }
+  };
+
+  const filteredUsers = users.filter(u => 
+    u.name?.toLowerCase().includes(search.toLowerCase()) || 
+    u.email?.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold text-slate-900">Manage Users</h2>
+        <SearchInput value={search} onChange={setSearch} placeholder="Search users by name or email..." />
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <table className="w-full text-left">
+          <thead className="bg-slate-50 border-b border-slate-200">
+            <tr>
+              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">User</th>
+              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Email</th>
+              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Joined</th>
+              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {isLoading ? (
+              <tr>
+                <td colSpan={4} className="px-6 py-12 text-center">
+                  <div className="w-8 h-8 border-2 border-blue-100 border-t-blue-600 rounded-full animate-spin mx-auto" />
+                </td>
+              </tr>
+            ) : filteredUsers.length > 0 ? filteredUsers.map(user => (
+              <tr key={user.id} className="hover:bg-slate-50 transition-colors">
+                <td className="px-6 py-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold">
+                      {user.name?.[0] || 'U'}
+                    </div>
+                    <p className="text-sm font-bold text-slate-900">{user.name}</p>
+                  </div>
+                </td>
+                <td className="px-6 py-4 text-sm text-slate-500">{user.email}</td>
+                <td className="px-6 py-4 text-sm text-slate-500">Recently</td>
+                <td className="px-6 py-4 text-right">
+                  <button onClick={() => handleDelete(user.id)} className="p-2 text-slate-300 hover:text-red-600 transition-colors">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </td>
+              </tr>
+            )) : (
+              <tr>
+                <td colSpan={4} className="px-6 py-12 text-center text-slate-400 font-medium">No users found.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function CommunitiesView({ showToast }: { showToast: (m: string, t?: 'success' | 'error') => void }) {
   const [communities, setCommunities] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({ name: '', type: 'State', state: '' });
+  const [search, setSearch] = useState('');
+  const [formData, setFormData] = useState({ name: '', type: 'State', state: '', description: '', image_url: '' });
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -1096,13 +1297,13 @@ function CommunitiesView() {
         const newComm = await res.json();
         setCommunities([...communities, newComm]);
         setShowForm(false);
-        setFormData({ name: '', type: 'State', state: '' });
+        setFormData({ name: '', type: 'State', state: '', description: '', image_url: '' });
+        showToast('Community created successfully');
       } else {
-        alert('Failed to create community');
+        showToast('Failed to create community', 'error');
       }
     } catch (err) {
-      console.error(err);
-      alert('An error occurred');
+      showToast('Network error', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -1110,21 +1311,38 @@ function CommunitiesView() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this community?')) return;
-    // Note: DELETE endpoint not implemented in server.ts yet, but adding UI logic
-    setCommunities(communities.filter(c => c.id !== id));
+    try {
+      const res = await fetch(`/api/communities/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setCommunities(communities.filter(c => c.id !== id));
+        showToast('Community deleted successfully');
+      } else {
+        showToast('Failed to delete community', 'error');
+      }
+    } catch (err) {
+      showToast('Network error', 'error');
+    }
   };
+
+  const filteredCommunities = communities.filter(c => 
+    c.name.toLowerCase().includes(search.toLowerCase()) ||
+    (c.state && c.state.toLowerCase().includes(search.toLowerCase()))
+  );
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-slate-900">Manage Communities</h2>
-        <button 
-          onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 px-4 py-2 bg-navy-900 text-white rounded-lg font-bold text-sm hover:bg-navy-800 transition-all"
-        >
-          <Plus className="w-4 h-4" />
-          {showForm ? 'Cancel' : 'Create Community'}
-        </button>
+        <div className="flex items-center gap-4">
+          <SearchInput value={search} onChange={setSearch} placeholder="Search communities..." />
+          <button 
+            onClick={() => setShowForm(!showForm)}
+            className="flex items-center gap-2 px-4 py-2 bg-navy-900 text-white rounded-lg font-bold text-sm hover:bg-navy-800 transition-all shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            {showForm ? 'Cancel' : 'Create Community'}
+          </button>
+        </div>
       </div>
 
       {showForm && (
@@ -1152,25 +1370,51 @@ function CommunitiesView() {
             </select>
           </div>
 
+          <div className="md:col-span-2">
+            <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Description</label>
+            <textarea placeholder="Describe this community..." className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl text-sm min-h-[100px]" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} />
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Image URL</label>
+            <input placeholder="https://..." className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl text-sm" value={formData.image_url} onChange={e => setFormData({...formData, image_url: e.target.value})} />
+          </div>
+
           <button type="submit" disabled={isLoading} className="md:col-span-2 py-3 bg-navy-900 text-white rounded-xl font-bold disabled:opacity-50">
             {isLoading ? 'Launching...' : 'Launch Community'}
           </button>
         </form>
       )}
 
-      {communities.length > 0 ? (
+      {filteredCommunities.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {communities.map(comm => (
-            <div key={comm.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between group">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">{comm.name}</h3>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="text-[10px] font-bold text-navy-500 uppercase tracking-tighter bg-navy-50 px-1.5 py-0.5 rounded">{comm.type}</span>
-                  {comm.state && <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter bg-slate-50 px-1.5 py-0.5 rounded">{comm.state}</span>}
+          {filteredCommunities.map(comm => (
+            <div key={comm.id} className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden group hover:shadow-xl transition-all duration-500">
+              <div className="h-32 bg-slate-100 relative">
+                {comm.image_url ? (
+                  <img src={comm.image_url} alt={comm.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center bg-navy-50 text-navy-200">
+                    <Users className="w-10 h-10" />
+                  </div>
+                )}
+                <div className="absolute top-3 right-3">
+                  <button onClick={() => handleDelete(comm.id)} className="p-2 bg-white/90 backdrop-blur text-red-600 rounded-full shadow-lg hover:bg-red-600 hover:text-white transition-all opacity-0 group-hover:opacity-100">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1">{comm.members || 0} Members</p>
               </div>
-              <button onClick={() => handleDelete(comm.id)} className="p-2 text-slate-300 hover:text-red-600 transition-colors opacity-0 group-hover:opacity-100"><Trash2 className="w-4 h-4" /></button>
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="font-bold text-slate-900 group-hover:text-blue-600 transition-colors">{comm.name}</h3>
+                  {comm.state && <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded uppercase">{comm.state}</span>}
+                </div>
+                <p className="text-xs text-slate-500 line-clamp-2 mb-4">{comm.description || 'No description provided.'}</p>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-navy-500 uppercase tracking-tighter bg-navy-50 px-1.5 py-0.5 rounded">{comm.type}</span>
+                  <p className="text-[10px] text-slate-400 font-medium">{comm.members || 0} Members</p>
+                </div>
+              </div>
             </div>
           ))}
         </div>
@@ -1179,16 +1423,17 @@ function CommunitiesView() {
           <div className="w-16 h-16 bg-navy-50 rounded-full flex items-center justify-center mx-auto mb-6">
             <Users className="w-8 h-8 text-navy-700" />
           </div>
-          <h3 className="text-xl font-bold text-navy-900 mb-2">No Communities Yet</h3>
-          <p className="text-slate-500 max-w-sm mx-auto">Start by creating a new community for students to join and interact.</p>
+          <h3 className="text-xl font-bold text-navy-900 mb-2">No Communities Found</h3>
+          <p className="text-slate-500 max-w-sm mx-auto">Try adjusting your search or create a new community.</p>
         </div>
       )}
     </div>
   );
 }
-function BlogsView() {
+function BlogsView({ showToast }: { showToast: (m: string, t?: 'success' | 'error') => void }) {
   const [blogs, setBlogs] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
+  const [search, setSearch] = useState('');
   const [formData, setFormData] = useState({
     title: '', content: '', category: 'Engineering', author_id: 'admin-1',
     location: '', type: '', timing: '', user_type: ''
@@ -1200,33 +1445,63 @@ function BlogsView() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await fetch('/api/blogs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(formData)
-    });
-    if (res.ok) {
-      const newBlog = await res.json();
-      setBlogs([newBlog, ...blogs]);
-      setShowForm(false);
-      setFormData({
-        title: '', content: '', category: 'Engineering', author_id: 'admin-1',
-        location: '', type: '', timing: '', user_type: ''
+    try {
+      const res = await fetch('/api/blogs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
       });
+      if (res.ok) {
+        const newBlog = await res.json();
+        setBlogs([newBlog, ...blogs]);
+        setShowForm(false);
+        setFormData({
+          title: '', content: '', category: 'Engineering', author_id: 'admin-1',
+          location: '', type: '', timing: '', user_type: ''
+        });
+        showToast('Blog published successfully');
+      } else {
+        showToast('Failed to publish blog', 'error');
+      }
+    } catch (err) {
+      showToast('Network error', 'error');
     }
   };
+
+  const deleteBlog = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this blog?')) return;
+    try {
+      const res = await fetch(`/api/blogs/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setBlogs(blogs.filter(b => b.id !== id));
+        showToast('Blog deleted successfully');
+      } else {
+        showToast('Failed to delete blog', 'error');
+      }
+    } catch (err) {
+      showToast('Network error', 'error');
+    }
+  };
+
+  const filteredBlogs = blogs.filter(b => 
+    b.title.toLowerCase().includes(search.toLowerCase()) ||
+    b.content.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-slate-900">Manage Blogs</h2>
-        <button 
-          onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 px-4 py-2 bg-navy-900 text-white rounded-lg font-bold text-sm hover:bg-navy-800 transition-all"
-        >
-          <Plus className="w-4 h-4" />
-          {showForm ? 'Cancel' : 'Write Blog'}
-        </button>
+        <div className="flex items-center gap-4">
+          <SearchInput value={search} onChange={setSearch} placeholder="Search blogs..." />
+          <button 
+            onClick={() => setShowForm(!showForm)}
+            className="flex items-center gap-2 px-4 py-2 bg-navy-900 text-white rounded-lg font-bold text-sm hover:bg-navy-800 transition-all shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            {showForm ? 'Cancel' : 'Write Blog'}
+          </button>
+        </div>
       </div>
 
       {showForm && (
@@ -1262,7 +1537,7 @@ function BlogsView() {
       )}
 
       <div className="grid grid-cols-1 gap-4">
-        {blogs.map(blog => (
+        {filteredBlogs.map(blog => (
           <div key={blog.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
             <div className="flex justify-between items-start">
               <div>
@@ -1275,7 +1550,7 @@ function BlogsView() {
               </div>
               <div className="flex gap-2">
                 <button className="p-2 text-slate-400 hover:text-navy-700 transition-colors"><Edit className="w-4 h-4" /></button>
-                <button className="p-2 text-slate-400 hover:text-red-600 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                <button onClick={() => deleteBlog(blog.id)} className="p-2 text-slate-400 hover:text-red-600 transition-colors"><Trash2 className="w-4 h-4" /></button>
               </div>
             </div>
           </div>
@@ -1285,7 +1560,7 @@ function BlogsView() {
   );
 }
 
-function AdminsView() {
+function AdminsView({ showToast }: { showToast: (m: string, t?: 'success' | 'error') => void }) {
   const [admins, setAdmins] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({ name: '', email: '', role: 'writer_admin' });
@@ -1296,16 +1571,23 @@ function AdminsView() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await fetch('/api/admins', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(formData)
-    });
-    if (res.ok) {
-      const newAdmin = await res.json();
-      setAdmins([...admins, newAdmin]);
-      setShowForm(false);
-      setFormData({ name: '', email: '', role: 'writer_admin' });
+    try {
+      const res = await fetch('/api/admins', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      });
+      if (res.ok) {
+        const newAdmin = await res.json();
+        setAdmins([...admins, newAdmin]);
+        setShowForm(false);
+        setFormData({ name: '', email: '', role: 'writer_admin' });
+        showToast('Admin added successfully');
+      } else {
+        showToast('Failed to add admin', 'error');
+      }
+    } catch (err) {
+      showToast('Network error', 'error');
     }
   };
 
@@ -1364,9 +1646,11 @@ function AdminsView() {
   );
 }
 
-function CollegesView() {
+function CollegesView({ showToast }: { showToast: (m: string, t?: 'success' | 'error') => void }) {
   const [colleges, setColleges] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
+  const [search, setSearch] = useState('');
+  const [editingCollege, setEditingCollege] = useState<any>(null);
   const [formData, setFormData] = useState({
     name: '', category: 'Engineering', city: '', state: '', nirf_rank: '', website: ''
   });
@@ -1375,25 +1659,63 @@ function CollegesView() {
     fetch('/api/colleges').then(res => res.json()).then(setColleges);
   }, []);
 
+  useEffect(() => {
+    if (editingCollege) {
+      setFormData({ ...editingCollege });
+      setShowForm(true);
+    }
+  }, [editingCollege]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await fetch('/api/colleges', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(formData)
-    });
-    if (res.ok) {
-      const newCol = await res.json();
-      setColleges([...colleges, newCol]);
-      setShowForm(false);
-      setFormData({ name: '', category: 'Engineering', city: '', state: '', nirf_rank: '', website: '' });
+    const method = editingCollege ? 'PATCH' : 'POST';
+    const url = editingCollege ? `/api/colleges/${editingCollege.id}` : '/api/colleges';
+
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      });
+      if (res.ok) {
+        const savedCol = await res.json();
+        if (editingCollege) {
+          setColleges(colleges.map(c => c.id === editingCollege.id ? savedCol : c));
+          showToast('College updated successfully');
+        } else {
+          setColleges([...colleges, savedCol]);
+          showToast('College added successfully');
+        }
+        setShowForm(false);
+        setEditingCollege(null);
+        setFormData({ name: '', category: 'Engineering', city: '', state: '', nirf_rank: '', website: '' });
+      } else {
+        showToast('Failed to save college', 'error');
+      }
+    } catch (err) {
+      showToast('Network error', 'error');
     }
   };
 
+  const filteredColleges = colleges.filter(c => 
+    c.name.toLowerCase().includes(search.toLowerCase()) || 
+    c.city.toLowerCase().includes(search.toLowerCase()) ||
+    c.state.toLowerCase().includes(search.toLowerCase())
+  );
+
   const handleDelete = async (id: string) => {
     if (confirm('Delete this college?')) {
-      await fetch(`/api/colleges/${id}`, { method: 'DELETE' });
-      setColleges(colleges.filter(c => c.id !== id));
+      try {
+        const res = await fetch(`/api/colleges/${id}`, { method: 'DELETE' });
+        if (res.ok) {
+          setColleges(colleges.filter(c => c.id !== id));
+          showToast('College deleted successfully');
+        } else {
+          showToast('Failed to delete college', 'error');
+        }
+      } catch (err) {
+        showToast('Network error', 'error');
+      }
     }
   };
 
@@ -1401,17 +1723,28 @@ function CollegesView() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-slate-900">Manage Colleges</h2>
-        <button 
-          onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 px-4 py-2 bg-navy-900 text-white rounded-lg font-bold text-sm hover:bg-navy-800 transition-all"
-        >
-          <Plus className="w-4 h-4" />
-          {showForm ? 'Cancel' : 'Add College'}
-        </button>
+        <div className="flex items-center gap-4">
+          <SearchInput value={search} onChange={setSearch} placeholder="Search colleges, cities or states..." />
+          <button 
+            onClick={() => {
+              setEditingCollege(null);
+              setFormData({ name: '', category: 'Engineering', city: '', state: '', nirf_rank: '', website: '' });
+              setShowForm(!showForm);
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-navy-900 text-white rounded-lg font-bold text-sm hover:bg-navy-800 transition-all shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            {showForm ? 'Cancel' : 'Add College'}
+          </button>
+        </div>
       </div>
 
       {showForm && (
         <form onSubmit={handleSubmit} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in zoom-in-95 duration-200">
+          <div className="md:col-span-2 flex justify-between items-center border-b border-slate-100 pb-4 mb-2">
+            <h3 className="font-bold text-slate-900">{editingCollege ? 'Edit College' : 'New College'}</h3>
+            {editingCollege && <button type="button" onClick={() => { setEditingCollege(null); setShowForm(false); }} className="text-xs text-slate-400 hover:text-slate-600">Clear Edit</button>}
+          </div>
           <input placeholder="College Name" className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-sm" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required />
           <select className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-sm" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>
             <option>Engineering</option>
@@ -1423,7 +1756,9 @@ function CollegesView() {
           <input placeholder="State" className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-sm" value={formData.state} onChange={e => setFormData({...formData, state: e.target.value})} required />
           <input placeholder="NIRF Rank" type="number" className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-sm" value={formData.nirf_rank} onChange={e => setFormData({...formData, nirf_rank: e.target.value})} />
           <input placeholder="Website URL" className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-sm" value={formData.website} onChange={e => setFormData({...formData, website: e.target.value})} />
-          <button type="submit" className="md:col-span-2 py-3 bg-navy-900 text-white rounded-xl font-bold">Save College</button>
+          <button type="submit" className="md:col-span-2 py-3 bg-navy-900 text-white rounded-xl font-bold">
+            {editingCollege ? 'Update College' : 'Save College'}
+          </button>
         </form>
       )}
 
@@ -1439,7 +1774,7 @@ function CollegesView() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {colleges.map(col => (
+            {filteredColleges.map(col => (
               <tr key={col.id} className="hover:bg-slate-50 transition-colors">
                 <td className="px-6 py-4">
                   <p className="text-sm font-bold text-slate-900">{col.name}</p>
@@ -1458,7 +1793,7 @@ function CollegesView() {
                 </td>
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-2">
-                    <button className="p-1.5 text-slate-400 hover:text-navy-700 transition-colors"><Edit className="w-4 h-4" /></button>
+                    <button onClick={() => setEditingCollege(col)} className="p-1.5 text-slate-400 hover:text-navy-700 transition-colors"><Edit className="w-4 h-4" /></button>
                     <button onClick={() => handleDelete(col.id)} className="p-1.5 text-slate-400 hover:text-red-600 transition-colors"><Trash2 className="w-4 h-4" /></button>
                   </div>
                 </td>
