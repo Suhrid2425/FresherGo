@@ -434,16 +434,60 @@ app.delete("/api/communities/:id", (req, res) => {
   }
 });
 
-// Serve static files in production (only if not on Vercel)
-// On Vercel, we use vercel.json rewrites to serve the dist folder natively
-if (process.env.NODE_ENV === "production" && !process.env.VERCEL) {
-  const distPath = path.join(process.cwd(), "dist");
-  app.use(express.static(distPath));
+// Serve static files in production
+if (process.env.NODE_ENV === "production") {
+  const fs = await import('fs');
   
-  app.get("*", (req, res, next) => {
-    if (req.path.startsWith('/api')) return next();
-    res.sendFile(path.join(distPath, "index.html"));
-  });
+  // Robust path discovery for the 'dist' folder in serverless environments
+  const getDistPath = () => {
+    const possiblePaths = [
+      path.resolve(__dirname, "dist"),
+      path.resolve(__dirname, "..", "dist"),
+      path.join(process.cwd(), "dist"),
+      path.join(process.cwd(), "..", "dist")
+    ];
+    
+    for (const p of possiblePaths) {
+      try {
+        if (fs.existsSync(p) && fs.statSync(p).isDirectory()) {
+          console.log(`Found dist folder at: ${p}`);
+          return p;
+        }
+      } catch (e) {}
+    }
+    return null;
+  };
+
+  const distPath = getDistPath();
+
+  if (distPath) {
+    // Serve static files with high performance settings
+    app.use(express.static(distPath, {
+      maxAge: '1d',
+      etag: true,
+      index: false
+    }));
+
+    // SPA Routing: Serve index.html for non-API, non-file requests
+    app.get("*", (req, res, next) => {
+      if (req.path.startsWith('/api')) return next();
+      
+      // Prevent serving index.html for missing assets (prevents "Unexpected token <" error)
+      if (path.extname(req.path)) {
+        return res.status(404).send("Not Found");
+      }
+
+      const indexPath = path.join(distPath, "index.html");
+      res.sendFile(indexPath, (err) => {
+        if (err) {
+          console.error("Error sending index.html:", err);
+          res.status(404).send("Application shell not found.");
+        }
+      });
+    });
+  } else {
+    console.error("Could not locate 'dist' folder for static serving.");
+  }
 }
 
 export { app };
